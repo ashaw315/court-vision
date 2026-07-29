@@ -39,32 +39,54 @@ a test.
 
 | File | Endpoint | Shape |
 |---|---|---|
+| `s2b_pbp_v3_sample.json` | `playbyplayv3` | 60 event objects, 23 fields each — **the core source** |
+| `s2b_JOINED.json` | join result | 41 made shots joined to their location + assister |
+| `s2_shots_game.json` | `shotchartdetail` | 24 headers, 60 rows (single game) |
 | `q1_shots_sample.json` | `shotchartdetail` | 24 headers, 25 sample rows (6,933 total for the season) |
-| `q2_PassesMade.json` | `playerdashptpass` | 21 headers; `PASS_TO` + `PASS_TEAMMATE_PLAYER_ID` |
-| `q2_PassesReceived.json` | `playerdashptpass` | 21 headers; `PASS_FROM` + `PASS_TEAMMATE_PLAYER_ID` |
 | `q3_lineups.json` | `teamdashlineups` | 56 headers, top 40 lineups by minutes |
 
-Two shapes worth knowing before modeling, confirmed against the fixtures:
+Note `playbyplayv3` returns **objects, not `{headers, rows}`** — only the older
+`shotchartdetail` / `teamdashlineups` fixtures need header-to-row zipping.
+
+The superseded spike-1 passing fixtures (`q2_PassesMade.json`,
+`q2_PassesReceived.json`, from `playerdashptpass`) remain on disk but are no longer the
+data source — see the passing/assists section below.
+
+Shapes worth knowing before modeling, confirmed against the fixtures:
 
 - **Lineup identity** is `GROUP_ID`, a dash-delimited sorted player-id string:
   `'-1629008-1629611-1629651-1641730-1642856-'` (leading and trailing dashes included).
   That is the natural join key to five `PLAYER_ID`s; `GROUP_NAME` is display-only
   (`"M. Porter Jr. - T. Mann - N. Claxton - N. Clowney - E. Dëmin"`).
-- **Player names in passing data** are `LAST, FIRST` (`"Minott, Josh"`), unlike
-  `shotchartdetail`'s `PLAYER_NAME` (`FIRST LAST`). Normalize on `PLAYER_ID`, never on name.
+- **Player names come in at least four variants** across the sources: play-by-play
+  `playerName` (`"Porter Jr."`, bare surname), `playerNameI` (`"M. Porter Jr."`),
+  `shotchartdetail`'s `PLAYER_NAME` (`FIRST LAST`), and the legacy passing fixtures'
+  `LAST, FIRST` (`"Minott, Josh"`). Normalize on `PLAYER_ID`/`personId`, never on name.
 
 ---
 
 ## What this is
 
-**Court Vision** is an observational tool for reading the Brooklyn Nets' offensive
-identity through two fused lenses: **ball movement** (who feeds whom — a passing
-network) and **shot geography** (where those possessions score). It operates at three
-grains from the same underlying data:
+**Court Vision** is an observational tool for reading how the Brooklyn Nets **create
+baskets** — the assist connections that generate scoring, and where on the floor those
+baskets happen.
 
-- **Player** — one player's passing network + shot signature
-- **Lineup** — a five-man unit's players shown together (see data-honesty note)
-- **Team** — the full Nets roster's ball-movement network + shot map
+The subject is **assisted scoring**, not "ball movement." That is a deliberate narrowing
+to what the data actually supports: every edge in this tool is a real assisted made
+basket, with a real assister and a real court location. "Ball movement" would imply
+passes we cannot see — the ball swung, the hockey assist, the pass that led to a miss.
+Where a ball-movement phrase is useful in copy, it is subordinate to and defined by the
+assist mechanism, never the umbrella claim.
+
+Two fused lenses on the same events: **who creates for whom** (the assist connection)
+and **where the basket happens** (shot geography). Three grains from the same underlying
+data:
+
+- **Player** — how one player creates baskets and gets created for, plus their shot
+  signature
+- **Lineup** — a five-man unit's scoring-creation network + shot map, filtered to the
+  possessions that unit was actually on court for
+- **Team** — the full Nets roster's scoring-creation network + shot map
 
 It is **observational, not advisory**. It shows a coach/scout/exec their own data in a
 form they haven't seen; it never scores lineups, recommends moves, or predicts. The
@@ -102,23 +124,63 @@ The spike already validated the data. Build on these facts; don't re-litigate th
 - `LOC_X`/`LOC_Y` are in tenths of feet, origin at the basket. Standard NBA shot-chart
   coordinate space (x roughly -250..250, y roughly -50..470).
 
-### Passing (`playerdashptpass`) — relational, works WITH ONE CAVEAT
-- Returns two sets per player: **PassesMade** and **PassesReceived**.
-- Key fields: `PASS_TEAMMATE_PLAYER_ID` (the join), `PASS` (count), `FREQUENCY`, `AST`,
-  and shooting results off those passes (`FGM/FGA/FG_PCT`, 2s and 3s).
-- Assembling all five players' pairwise records builds a **directed passing network**
-  for a lineup. The fusion is mechanically real.
+### Assists (`playbyplayv3`) — per-event, and the core source
 
-> **CRITICAL DATA-HONESTY CAVEAT.** This passing data is **season-level per player**, NOT
-> filtered to shared lineup minutes. A player's pass counts span all their minutes
-> against all lineups. So an assembled "lineup network" is really *"the season-long ball-
-> movement tendencies of this unit's five players, shown together,"* NOT *"how these five
-> passed during their shared possessions."*
+Spike 2 replaced the season-aggregate passing endpoint (`playerdashptpass`) with
+per-game play-by-play. This changed what the tool can honestly claim.
+
+- **`shotchartdetail.GAME_EVENT_ID` joins to V3 `actionNumber` at 100%** (41/41 made
+  shots in the validated game). Every made shot ties to its real court location AND its
+  assister.
+- V3 also carries `xLegacy`/`yLegacy` (same coordinate space as `LOC_X`/`LOC_Y`),
+  `shotResult`, `shotValue`, `isFieldGoal`, `personId`, `period`, and `clock`
+  (`"PT11M41.00S"`) — so play-by-play is close to a complete source on its own.
+- Because the data is **per-event, not season-aggregate**, assists can be honestly
+  filtered by game, by date range, and by lineup-on-court. A lineup's assist network
+  reflects the possessions that unit was actually on court for.
+- Lineup-on-court filtering comes from `LineupInterval`s derived from substitution
+  events (`actionType: "Substitution"`, `description: "SUB: Williams FOR Porter Jr."`).
+  That derivation is the highest-risk transform in the project — Phase 3+.
+
+> **CRITICAL DATA-HONESTY CAVEAT — assister resolution.** The assister exists in the
+> source **only as free text**: a bare surname inside the event description, e.g.
+> `"Powell 25' 3PT Jump Shot (3 PTS) (Mann 1 AST)"`. The spike confirmed the structured
+> assist fields are **empty** — there is no assister `personId` anywhere in the data.
 >
-> **This must be labeled accurately everywhere** — UI copy and README. Honest phrasing:
-> "ball-movement tendencies of this unit's players." Overclaim to avoid: "how this lineup
-> passed." The distinction, stated openly, is itself a positive signal (knowing your
-> data's limits). Never paper over it.
+> So every assist edge depends on parsing a surname and mapping it to a `personId`
+> against the roster on court, which can be ambiguous (two players sharing a surname).
+> **An ambiguous parse resolves to `null` and logs a warning. It is never guessed.** A
+> wrong edge is a fabricated claim about a specific player — worse than a missing one.
+>
+> `assisterId` is therefore nullable throughout, and null carries three
+> indistinguishable meanings: the shot was missed, the make was unassisted, or the
+> assister could not be resolved. State this openly in the README; knowing the limit is
+> itself the positive signal.
+
+Scope note: an assist edge means **assisted made baskets**, not "ball movement"
+generally. A pass leading to a miss, a swung ball, a hockey assist, and a dribble
+handoff are all real ball movement and none appear here. Label it as the
+assisted-basket subset — do not call it a passing network.
+
+### The assisted-vs-unassisted split — in scope, free from the parse
+
+Because the `(Name N AST)` tag is either present or absent on a made basket, we can
+honestly state **what fraction of a player's or unit's made baskets were assisted versus
+self-created**. This costs nothing — it falls out of the assister parse already required
+— and it is a real scouting-relevant characterization: a player scoring 80% assisted is
+a different offensive piece than one scoring 30% assisted.
+
+Note the null-handling interaction: an unresolved assister (the ambiguous-surname case)
+is a made basket we know was assisted but cannot attribute. Those baskets count as
+**assisted** in this split even though they produce no edge in the network — the tag was
+present. Do not let them silently fall into "self-created," which would misstate the
+split.
+
+> **What this split does NOT claim.** It characterizes *made baskets only*, and says
+> nothing about shot difficulty, contest level, or defensive pressure. An unassisted
+> basket is not necessarily a "tougher" shot, and an assisted one is not necessarily
+> "easier." Those are tracking-data claims and we do not have that data. State it as
+> assisted vs. self-created and stop there.
 
 ### Lineups (`teamdashlineups`, group_quantity=5) — forced a real scope decision
 - 250 distinct five-man lineups, but the distribution is thin (rebuilding team):
@@ -186,8 +248,10 @@ on them.
 
 **Ground the aesthetic in the subject.** The subject's world is a basketball court:
 geometry, coordinate space, the arc of the three-point line, the paint, movement and
-flow. The court itself is the material. The signature element should embody ball movement
-+ shot geography — not a chart bolted onto a page.
+flow. The court itself is the material. The signature element should embody **assisted
+scoring** — the connection between creator and scorer, landing at a real place on the
+floor — not a chart bolted onto a page. Encode only the three dimensions named in the
+guardrails; a beautiful encoding of data we don't have is still fabrication.
 
 **Two-pass process before building UI:** (1) compact token system — 4–6 named hex colors,
 2+ deliberate typefaces (characterful display used with restraint, clean body, a mono/
@@ -195,7 +259,7 @@ utility face for data), a layout concept, and ONE signature element the tool is
 remembered by. (2) critique it against the brief; if any part reads as the generic
 default, revise and note why. Only then write code.
 
-**Motion:** deliberate, not scattered. The passing network can animate on load or reveal
+**Motion:** deliberate, not scattered. The assist network can animate on load or reveal
 on interaction, but resist ambient effects that read as AI-generated. Spend boldness in
 one place; keep everything else quiet. Respect `prefers-reduced-motion`.
 
@@ -214,13 +278,20 @@ TDD applies where it earns its keep. Write tests first for these; do NOT write h
 tests to hit a coverage number.
 
 **Test (high value):**
-- **Data transforms** — given a raw pass blob / shot blob, does the transform produce the
-  correct normalized structure? (Highest-value surface. Use saved spike JSON as fixtures.)
-- **Network assembly** — given five players' pairwise pass records, is the directed
-  network (nodes, weighted edges, directions) assembled correctly?
+- **Data transforms** — given a raw play-by-play / shot blob, does the transform produce
+  the correct normalized structure? (Use saved spike JSON as fixtures.)
+- **Assister parsing** — the highest-value surface. Given an event description, is the
+  `(Name N AST)` tag extracted correctly? Cover unassisted makes (no tag), missed shots,
+  and — critically — the **ambiguous surname case, which must resolve to `null`, never a
+  guess**.
+- **Lineup-interval derivation** — the highest-risk transform. Given substitution events,
+  are the on-court fives and their interval boundaries correct across period resets?
+- **Shot/play-by-play join** — does `GAME_EVENT_ID` ↔ `actionNumber` join cleanly, and
+  what happens to an unmatched event?
+- **Assist-edge aggregation** — given `ShotEvent`s, is the directed network (nodes,
+  weighted edges, directions) assembled correctly, with `count`/`points`/`made2`/`made3`
+  consistent?
 - **API contract** — does each endpoint return data matching the Zod schema / TS types?
-- **Derived math** — any aggregates (edge weights, frequencies, shot-zone rollups) are
-  unit-tested against hand-checked values.
 
 **Do NOT unit-test:**
 - SVG/D3 pixel output — visual review, not assertions. Testing rendered pixels is theater.
@@ -247,14 +318,32 @@ coverage.
   projections, or "who to add."
 - **No fabricated data.** Especially no invented player positions or defensive spacing.
   If a view would require data we don't have, we don't build that view.
-- **No opponent/matchup views.** Passing data isn't opponent-splittable; "Nets vs X" would
-  require faking the opponent dimension. Out of scope.
+- **No opponent/matchup views.** Per-game play-by-play makes "Nets vs X" mechanically
+  possible now, but it is still out of scope — the brief says "small" twice, and the
+  three grains (player / lineup / team) are the whole build. Goes in README "Future
+  directions."
 - **No scope creep dressed as ambition.** The brief says "small" twice. Player + lineup +
   team grain, Nets-only, is the whole scope. Everything else goes in README "Future
   directions," not the build.
 - **No over-engineering.** No separate backend service, no auth system, no multi-team
   infra. Right-sized.
-- **Label passing data honestly** (season-level, not lineup-filtered) everywhere it appears.
+- **The encodable dimensions are fixed.** Everything the visualization encodes comes from
+  exactly three: **assist connection volume**, **shot value (2 vs 3) / points created**,
+  and the **assisted-vs-unassisted split**. Nothing else. If a proposed encoding needs a
+  dimension not on that list, it needs data we don't have — don't build it.
+
+  Explicitly OUT of scope; these go in README **"Future Directions,"** not the build:
+  - **Play-type / isolation context (Synergy).** Deferred, not impossible: the endpoint
+    is confirmed reachable but needs per-play-type calls (both spike attempts returned
+    empty). Real work, out of scope for this build.
+  - **Contested/uncontested, or any shot-difficulty dimension.** This is optical tracking
+    (Second Spectrum) and is **not public**. Not deferred — unavailable. Never estimate
+    it.
+  - **Turnovers / full possession context.** A separate feature with its own data
+    modeling; not this build.
+- **Never guess an assister.** Ambiguous surname→`personId` resolution yields `null` plus
+  a logged warning, never a best guess. Label assist data as **assisted made baskets**,
+  not "all ball movement," everywhere it appears.
 
 ## Repo hygiene
 
@@ -275,14 +364,15 @@ coverage.
 ## Build order (proposed — confirm before starting each phase)
 
 1. **Repo + tooling skeleton** — Next + TS, Drizzle, test runner, gitignore, env scaffold.
-2. **Data contract** — shared TS types + Zod for player, lineup, team, shot, pass-edge.
+2. **Data contract** — shared TS types + Zod for player, shot event, assist edge,
+   lineup, lineup interval.
 3. **ETL** — Python pulls → transforms (TDD the transforms against spike fixtures) → JSON.
 4. **DB + migrations** — Drizzle schema from real data shape; initial migration; load ETL
    output.
 5. **API** — route handlers per grain (player / lineup / team); Zod-validated; contract-
    tested.
 6. **Design pass** — token system + signature element + critique BEFORE frontend code.
-7. **Frontend** — shot map, then passing network, then the three-grain switch; wire to API.
+7. **Frontend** — shot map, then assist network, then the three-grain switch; wire to API.
 8. **Polish** — quality floor, empty/error states, responsive, reduced-motion.
 9. **Write-up + disclosure + deploy.**
 
