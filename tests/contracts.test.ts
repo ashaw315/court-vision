@@ -36,6 +36,8 @@ const missedShot: ShotEvent = {
   shotDistance: 26,
   actionType: 'Missed Shot',
   subType: 'Jump Shot',
+  teamId: 1610612751,
+  intervalId: '0022500123:1610612751:1:PT12M00.00S',
 };
 
 /** Real joined event: "Powell 25' 3PT Jump Shot (3 PTS) (Mann 1 AST)", event 10. */
@@ -54,6 +56,8 @@ const assistedShot: ShotEvent = {
   shotDistance: 25,
   actionType: 'Made Shot',
   subType: 'Jump Shot',
+  teamId: 1610612751,
+  intervalId: '0022500123:1610612751:1:PT12M00.00S',
 };
 
 describe('ShotEvent', () => {
@@ -111,6 +115,30 @@ describe('ShotEvent', () => {
   it('rejects a player assisting their own shot', () => {
     const selfAssist = { ...assistedShot, assisterId: assistedShot.shooterId };
     expect(ShotEvent.safeParse(selfAssist).success).toBe(false);
+  });
+
+  it('preserves intervalId — the lineup attribution must survive parsing', () => {
+    // Zod strips undeclared keys silently, so a field the schema does not know about
+    // would vanish here without any error. That would quietly remove the
+    // lineup-filtered assist capability on the way from the ETL into the app.
+    const parsed = ShotEvent.parse(assistedShot);
+    expect(parsed.intervalId).toBe('0022500123:1610612751:1:PT12M00.00S');
+  });
+
+  it('accepts a null intervalId as explicitly unattributable', () => {
+    // Null means the on-court five could not be established for this moment — honest
+    // incompleteness. A wrong intervalId would be a fabricated claim about a unit.
+    const parsed = ShotEvent.parse({ ...assistedShot, intervalId: null });
+    expect(parsed.intervalId).toBeNull();
+  });
+
+  it('rejects an empty-string intervalId', () => {
+    expect(ShotEvent.safeParse({ ...assistedShot, intervalId: '' }).success).toBe(false);
+  });
+
+  it('requires a teamId so aggregates can be scoped to one side', () => {
+    const { teamId: _omitted, ...noTeam } = assistedShot;
+    expect(ShotEvent.safeParse(noTeam).success).toBe(false);
   });
 });
 

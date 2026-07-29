@@ -19,3 +19,9 @@ coverage/
 
 # drizzle-kit local cache (generated migrations in /drizzle ARE tracked)
 .drizzle/
+
+# ETL emitted JSON + cached raw responses — regenerated, not source artifacts
+/etl/out/
+/etl/cache/
+__pycache__/
+.pytest_cache/

@@ -1,0 +1,30 @@
+# Python linting for the ETL (the only Python in the project).
+# Added after adversarial review found dead code that no tool was checking for —
+# `npm run lint` covers TypeScript only.
+target-version = "py313"
+line-length = 90
+extend-exclude = [
+    ".venv", "scratch", "etl/cache", "etl/out",
+    # Throwaway data spikes, already run; kept for reference, not deliverable code.
+    "spike.py", "spike2.py", "spike2b.py",
+]
+
+[lint]
+select = [
+    "F",    # pyflakes — unused imports/variables, undefined names
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "I",    # import sorting
+    "B",    # bugbear — likely bugs
+    "UP",   # pyupgrade
+    "C4",   # comprehension simplification
+    "RET",  # return-flow simplification
+    "SIM",  # simplification
+]
+ignore = [
+    "E501",  # line length is enforced by line-length above, not per-line noise
+]
+
+[lint.per-file-ignores]
+# Tests deliberately use long literal fixtures and repeated setup.
+"etl/tests/*" = ["B018"]

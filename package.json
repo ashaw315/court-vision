@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "test:etl": ".venv/bin/ruff check . && .venv/bin/python -m pytest -q && vitest run tests/etl-output.test.ts",
+    "lint:py": ".venv/bin/ruff check ."
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

@@ -88,6 +88,25 @@ export const ShotEvent = z.object({
   /** Shot descriptors, e.g. actionType "Made Shot" / subType "Driving Layup Shot". */
   actionType: z.string(),
   subType: z.string(),
+
+  /** The team whose shot this is. Scopes any aggregate to one side. */
+  teamId: PersonId,
+
+  /**
+   * The `LineupInterval` this shot falls within — the five who were on court for it.
+   *
+   * This is what makes lineup-filtered assists real rather than approximate, and it is
+   * the whole reason the project moved from season-aggregate passing data to per-event
+   * play-by-play. Without it a "lineup network" would again be a season-level
+   * approximation.
+   *
+   * Null means **unattributable, not unimportant**: the shot happened, but the on-court
+   * five could not be established for its moment — typically because a substitution in
+   * that stretch named a player who could not be resolved, so the derivation refused to
+   * guess. A null here is honest incompleteness; a wrong intervalId would be a
+   * fabricated claim about which unit was playing.
+   */
+  intervalId: z.string().min(1).nullable(),
 })
   .refine((s) => !(s.assisted && !s.made), {
     message: 'a missed shot cannot be assisted',
