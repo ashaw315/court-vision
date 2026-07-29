@@ -1,0 +1,8 @@
+/* Reset only. The token system (color, type, layout) is defined in Phase 6 —
+   nothing here should pre-empt that. */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}

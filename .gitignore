@@ -8,3 +8,14 @@ spike_out/
 /scratch/
 dist/
 coverage/
+
+# OS
+.DS_Store
+
+# Next / build output
+/next-env.d.ts
+.vercel
+*.tsbuildinfo
+
+# drizzle-kit local cache (generated migrations in /drizzle ARE tracked)
+.drizzle/
