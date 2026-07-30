@@ -25,3 +25,11 @@ coverage/
 /etl/cache/
 __pycache__/
 .pytest_cache/
+
+# Test fixtures ARE tracked, deliberately: the suite must run on a fresh clone.
+# Frozen real NBA responses (game 0022500610) — public data, no secrets. This negation
+# is defensive; no rule above currently catches the path. Keep it so a future broad
+# rule (e.g. "fixtures/") cannot silently un-track them and reintroduce a suite that
+# only passes on the author's machine.
+!etl/tests/fixtures/
+!etl/tests/fixtures/**

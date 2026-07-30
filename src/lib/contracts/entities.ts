@@ -31,7 +31,21 @@ export type Player = z.infer<typeof Player>;
 export const ShotEvent = z.object({
   gameId: GameId,
 
-  /** V3 `actionNumber` / shotchart `GAME_EVENT_ID` — unique within a game. */
+  /**
+   * V3 `actionNumber` / shotchart `GAME_EVENT_ID` — the join key between the two
+   * sources.
+   *
+   * Unique among **field-goal events** within a game, which is all a ShotEvent ever
+   * holds. It is NOT unique across the full play-by-play action stream: a block or steal
+   * shares an `actionNumber` with the shot or turnover it pairs with, differing only by
+   * `actionId`. In the validated game 16 of 411 distinct `actionNumber`s are duplicated
+   * that way, and no duplicate pairs two field goals — which is exactly why uniqueness
+   * survives at this level.
+   *
+   * So: safe as an identifier for shots; unsafe as a key over raw stream events. Use
+   * `actionId` if a stream-wide unique key is ever needed. Pinned by
+   * `etl/tests/test_shot_events.py::TestEventIdUniqueness`.
+   */
   eventId: z.number().int().nonnegative(),
 
   period: Period,

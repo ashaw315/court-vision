@@ -19,7 +19,8 @@ import pathlib
 import pytest
 from transforms.roster import build_rosters_from_boxscore
 
-FIXTURES = pathlib.Path(__file__).resolve().parents[2] / "scratch" / "fixtures"
+# Anchored to THIS FILE, not the working directory, so pytest works from anywhere.
+FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 NETS = 1610612751
 PHX = 1610612756
 

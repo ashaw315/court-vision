@@ -1,7 +1,7 @@
 """Tests for assister parsing — the highest-value transform.
 
 Written before the implementation. Fixture descriptions are real strings from
-scratch/fixtures/s2b_pbp_v3_sample.json (Nets vs PHX, game 0022500610).
+etl/tests/fixtures/s2b_pbp_v3_sample.json (Nets vs PHX, game 0022500610).
 
 The load-bearing rule under test: an ambiguous surname must resolve to
 assisterId=None while STILL counting as assisted. A wrong edge is a fabricated claim

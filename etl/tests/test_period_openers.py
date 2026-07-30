@@ -41,7 +41,8 @@ from transforms.roster import (
     build_rosters_from_boxscore,
 )
 
-FIXTURES = pathlib.Path(__file__).resolve().parents[2] / "scratch" / "fixtures"
+# Anchored to THIS FILE, not the working directory, so pytest works from anywhere.
+FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 NETS = 1610612751
 
 
@@ -55,6 +56,19 @@ def boxscore():
 def period_boxscores():
     with open(FIXTURES / "s3_boxscore_periods_0022500610.json") as f:
         return {int(k): v for k, v in json.load(f).items()}
+
+
+@pytest.fixture
+def full_actions():
+    """The COMPLETE 4-period action stream (427 events).
+
+    Distinct from s2b_pbp_v3_sample.json, which is a truncated 60-event period-1 sample.
+    The tests below assert behaviour across all four periods, so they need the whole
+    game. This used to read etl/cache/ behind a pytest.skip — meaning it silently
+    SKIPPED on a fresh clone, quietly not verifying the property it exists to verify.
+    """
+    with open(FIXTURES / "pbp_full_0022500610.json") as f:
+        return json.load(f)
 
 
 class TestPerPeriodParticipation:
@@ -94,22 +108,13 @@ class TestBoxscoreAnchoredOpeners:
     """The opening five for every period, from the boxscore candidate set."""
 
     def test_derives_five_openers_for_every_period_of_the_real_game(
-        self, boxscore, period_boxscores
+        self, boxscore, period_boxscores, full_actions
     ):
-        with open(FIXTURES / "s2b_pbp_v3_sample.json") as f:
-            pass  # the truncated sample is not used here; the live pbp cache is
-        # Use the cached full stream if present, else skip — this asserts on real data.
-        cache = FIXTURES.parents[1] / "etl" / "cache" / "pbp_0022500610.json"
-        if not cache.exists():
-            pytest.skip("full play-by-play cache not present; run etl/run_game.py")
-        with open(cache) as f:
-            actions = json.load(f)["game"]["actions"]
-
         team = build_rosters_from_boxscore(boxscore)[NETS]
         played = build_period_rosters_from_boxscores(period_boxscores, NETS)
 
         intervals, warnings = build_lineup_intervals(
-            actions,
+            full_actions,
             "0022500610",
             NETS,
             team.roster,
@@ -128,17 +133,12 @@ class TestBoxscoreAnchoredOpeners:
             assert len(opener["onCourt"]) == 5
 
     def test_period_one_openers_are_the_boxscore_starters(
-        self, boxscore, period_boxscores
+        self, boxscore, period_boxscores, full_actions
     ):
-        cache = FIXTURES.parents[1] / "etl" / "cache" / "pbp_0022500610.json"
-        if not cache.exists():
-            pytest.skip("full play-by-play cache not present")
-        with open(cache) as f:
-            actions = json.load(f)["game"]["actions"]
         team = build_rosters_from_boxscore(boxscore)[NETS]
         played = build_period_rosters_from_boxscores(period_boxscores, NETS)
         intervals = build_lineup_intervals(
-            actions, "0022500610", NETS, team.roster,
+            full_actions, "0022500610", NETS, team.roster,
             starters=team.starters, period_participation=played,
         )
         first = [iv for iv in intervals if iv["period"] == 1][0]

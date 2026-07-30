@@ -14,16 +14,37 @@ import { AssistEdge, LineupInterval, Player, ShotEvent } from '@/lib/contracts';
  * these tests parse it with the actual schemas. A record the contract rejects is a bug
  * in the ETL, not something to coerce.
  *
- * Regenerate the input with:  .venv/bin/python etl/run_fixture.py
+ * Input resolution, in order:
+ *   1. `etl/out/fixture_stage1.json` — live output, if the pipeline has been run locally.
+ *   2. `etl/tests/fixtures/etl_output_0022500610.json` — a TRACKED frozen copy.
+ *
+ * The tracked fallback exists so this file actually runs on a fresh clone. It previously
+ * read only the gitignored `etl/out/` path behind a `describe.skipIf`, which meant all
+ * eight assertions SILENTLY SKIPPED for anyone who had not run the ETL — reporting green
+ * while verifying nothing. Preferring live output keeps the test meaningful during
+ * development; the frozen copy keeps it meaningful everywhere else.
+ *
+ * Regenerate the live input with:  .venv/bin/python etl/run_game.py
  */
 
-const OUTPUT = path.join(process.cwd(), 'etl', 'out', 'fixture_stage1.json');
+// Anchored to this file, not the working directory.
+const HERE = path.dirname(new URL(import.meta.url).pathname);
+const LIVE_OUTPUT = path.join(HERE, '..', 'etl', 'out', 'fixture_stage1.json');
+const TRACKED_OUTPUT = path.join(
+  HERE, '..', 'etl', 'tests', 'fixtures', 'etl_output_0022500610.json',
+);
+// The staleness guard compares against the full-game artifact specifically, NOT
+// fixture_stage1.json: run_fixture.py overwrites that path with truncated-sample output
+// (13 shots), so comparing the frozen full-game copy to it would fail for the wrong
+// reason. run_game.py writes both.
+const LIVE_GAME_OUTPUT = path.join(
+  HERE, '..', 'etl', 'out', 'game_0022500610.json',
+);
 
-const payload = existsSync(OUTPUT)
-  ? JSON.parse(readFileSync(OUTPUT, 'utf8'))
-  : null;
+const source = existsSync(LIVE_OUTPUT) ? LIVE_OUTPUT : TRACKED_OUTPUT;
+const payload = JSON.parse(readFileSync(source, 'utf8'));
 
-describe.skipIf(payload === null)('ETL output conforms to the Phase 2 contract', () => {
+describe('ETL output conforms to the Phase 2 contract', () => {
   it('emits shot events that satisfy ShotEvent', () => {
     expect(payload.shotEvents.length).toBeGreaterThan(0);
     for (const record of payload.shotEvents) {
@@ -95,5 +116,80 @@ describe.skipIf(payload === null)('ETL output conforms to the Phase 2 contract',
     expect(payload.assistedSplit.madeBaskets).toBe(made.length);
     expect(payload.assistedSplit.assisted).toBe(assisted.length);
     expect(payload.assistedSplit.selfCreated).toBe(made.length - assisted.length);
+  });
+});
+
+/**
+ * Staleness guard.
+ *
+ * The contract assertions above run against live output when it exists and the frozen
+ * copy otherwise. That is what makes them work on a clone — but it also means the two
+ * inputs could silently diverge: a transform change would alter live output while the
+ * frozen copy kept asserting the old shape and passing. CI (frozen) would then be
+ * green about something that is no longer true.
+ *
+ * So whenever live full-game output is present, it must MATCH the frozen fixture. If it
+ * doesn't, the fixture needs regenerating — which is a deliberate act, not something to
+ * discover later:
+ *
+ *     .venv/bin/python etl/run_game.py 0022500610
+ *     cp etl/out/game_0022500610.json \
+ *        etl/tests/fixtures/etl_output_0022500610.json
+ *
+ * This is a SEPARATE describe from the contract assertions on purpose. When live output
+ * is absent (a clone, or CI) only the COMPARISON no-ops; every contract assertion above
+ * still runs against the frozen copy. Note "no-ops", not "skips" — the test still
+ * executes and reports, because a conditional skip is precisely the pattern this file
+ * was fixed to remove.
+ */
+const hasLiveGameOutput = existsSync(LIVE_GAME_OUTPUT);
+
+describe('the frozen ETL fixture is not stale', () => {
+  // Deliberately NOT `it.runIf`: that registers a SKIPPED test on a clone, and this
+  // suite holds itself to zero skips — a test that can skip is a test that isn't really
+  // committed. Instead this always runs and no-ops explicitly when there is nothing to
+  // compare against.
+  it('matches freshly generated live output when live output exists', () => {
+    if (!hasLiveGameOutput) {
+      // Nothing to compare on a clone. The contract assertions above already ran
+      // against the frozen copy, which is the coverage that matters here.
+      expect(existsSync(TRACKED_OUTPUT), 'the frozen fixture must be tracked').toBe(true);
+      return;
+    }
+
+    const live = JSON.parse(readFileSync(LIVE_GAME_OUTPUT, 'utf8'));
+    const frozen = JSON.parse(readFileSync(TRACKED_OUTPUT, 'utf8'));
+
+    // Compare the payload the contract tests actually read. `verification` and
+    // `warnings` are run diagnostics rather than contract data, so they are excluded —
+    // they can legitimately differ (e.g. added checks) without the DATA being stale.
+    const shape = (p: Record<string, unknown>) => ({
+      gameId: p.gameId,
+      teamId: p.teamId,
+      shotEvents: p.shotEvents,
+      assistEdges: p.assistEdges,
+      lineupIntervals: p.lineupIntervals,
+      players: p.players,
+      assistedSplit: p.assistedSplit,
+      starters: p.starters,
+    });
+
+    expect(
+      shape(frozen),
+      'frozen fixture differs from live ETL output — regenerate it (see the comment '
+        + 'above this test) so the clone/CI branch asserts current behaviour',
+    ).toEqual(shape(live));
+  });
+
+  it('records whether the comparison ran, so a skip is never invisible', () => {
+    // Always runs. Documents in the suite output which mode this file is in, so
+    // "the guard did not compare anything" can never look like "the guard passed".
+    expect(typeof hasLiveGameOutput).toBe('boolean');
+    if (!hasLiveGameOutput) {
+      console.info(
+        'staleness comparison skipped: no etl/out/game_0022500610.json (expected on a '
+          + 'fresh clone). Contract assertions still ran against the frozen fixture.',
+      );
+    }
   });
 });

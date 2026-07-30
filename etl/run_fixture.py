@@ -21,7 +21,9 @@ from transforms.roster import build_rosters_from_boxscore
 from transforms.shot_events import assisted_split, build_assist_edges, build_shot_events
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-FIXTURES = REPO / "scratch" / "fixtures"
+# The tracked test fixtures — same frozen data the suite uses, so this driver works on
+# a fresh clone without a prior pipeline run.
+FIXTURES = REPO / "etl" / "tests" / "fixtures"
 OUT = REPO / "etl" / "out"
 
 NETS = 1610612751
