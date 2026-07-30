@@ -16,7 +16,105 @@ Built incrementally, per `phases/phase3.md`:
 
 - **Stage 1 — transforms, TDD'd against saved fixtures, no network.** ✅ Done.
 - **Stage 2 — one-game live pull end-to-end.** ✅ Done (`etl/run_game.py`).
-- **Stage 3 — all 82 games, rate-limited + checkpointed.** Not started.
+- **Stage 3 — all 82 games, rate-limited + checkpointed.** ✅ Done (`etl/run_season.py`).
+
+```
+.venv/bin/python etl/run_season.py [--limit N] [--force]
+```
+
+Checkpointed: raw responses cache in `etl/cache/`, per-game output persists in
+`etl/out/games/`. A re-run serves all 82 games from checkpoint in ~1.4s with zero endpoint
+calls (the live run takes ~25 min at 1 req/2s), so a crash or Ctrl-C resumes rather than
+restarts.
+
+### Stage 3 result: 72 of 82 games validated
+
+| | |
+|---|---|
+| games in schedule | 82 |
+| succeeded | **72** |
+| failed validation | **10** (all one root cause — see below) |
+| errored fetching | 0 |
+| shot events | 6,089 — **100% attributed to a lineup** |
+| made baskets | 2,714 (1,817 assisted / 897 self-created) |
+| **assisted share** | **66.9%** (plausible; league norm ~55-65%) |
+| unresolved assisters | **0** |
+| assist edges | 286 |
+| lineup intervals | 1,380 |
+| lineups emitted (≥ 25 min) | **21** — of which 5 ≥ 50 min, 6 ≥ 40, 15 ≥ 30 |
+| players | 22 |
+
+The ~287-minute top unit (Porter Jr./Mann/Claxton/Clowney/Dëmin) and the 5 units clearing
+50 minutes independently corroborate the spike numbers recorded in CLAUDE.md — arrived at
+from per-event play-by-play rather than `teamdashlineups`.
+
+### Emit floor vs display threshold
+
+Two different decisions, deliberately kept apart:
+
+- **Emit floor — 25 minutes, owned by the ETL.** Below this a "unit" is a handful of
+  scattered possessions across a season and genuinely isn't a subject. 21 units clear it,
+  out of **608** distinct five-man combinations the Nets actually used.
+- **Display threshold — owned by the frontend.** Which of the 21 to surface, and how to
+  caveat the thin ones, is a presentation call.
+
+The ETL originally cut at 50 minutes, which baked a presentation decision into the dataset:
+changing the UI's mind would have required re-running the whole season pull. Emitting to 25
+and carrying `minutes` on **every** `Lineup` record means any threshold can be applied
+downstream, and sample size stays visible so the UI can be honest about it — a 25-minute
+unit and a 287-minute unit should not look equally authoritative.
+
+The reasoning CLAUDE.md records still holds and is still write-up material: the
+distribution is thin because this is a rebuilding roster. What changed is only *where* the
+cut is applied.
+
+### Two real bugs surfaced by volume
+
+**Fixed — diacritic folding (regression test `TestFinding12DiacriticFolding`).** The
+boxscore spells surnames `Dëmin`, `Diabaté`, `Salaün`; play-by-play descriptions spell them
+`Demin`, `Diabate`, `Salaun`. `_normalise` folded periods but not diacritics, so these
+never matched. The damage was not a missing assist edge — the unresolved name also broke
+per-period opener seeding (the player could not be subtracted from boxscore participation,
+so six openers were computed instead of five and the period degraded). Before the fix the
+first three games ran 67-82% attribution with minutes short by up to 571s; after, 100% and
+exact. Fixed by NFD-decomposing and dropping combining marks.
+
+**NOT fixed — out-of-order substitution clocks (regression test
+`TestFinding13OutOfOrderSubstitutionClocks`).** In exactly 10 games, ONE substitution
+carries a clock *earlier* in the period than the substitution before it despite a higher
+`actionNumber`. Real example, game 0022500335 period 4:
+
+```
+#614  PT07M12.00S  SUB: Wolf FOR Demin
+#620  PT10M46.00S  SUB: Williams FOR Wolf     <- 3.5 minutes EARLIER
+```
+
+That produces an interval whose end precedes its start, which overlaps its neighbours and
+corrupts subsequent durations. **This is source-data corruption, not a transform bug.**
+
+Left unfixed deliberately: repairing it means deciding which of two contradictory
+timestamps is true, and inferring that would put a guessed lineup on the floor for a
+stretch of a real game. The current behaviour is the honest one — the verifier detects it
+and the game is excluded from the aggregate, so 72 clean games are used rather than 82
+partly-wrong ones. **The guard is exactly diagnostic: all 10 affected games failed
+`intervals tile each period contiguously` and all 72 unaffected games passed — a 1:1
+correlation with zero false positives.** Anyone revisiting this should pick the policy
+first (drop the period, drop the game, or trust `actionNumber` over the clock).
+
+### Long tail observed across the season
+
+| case | games |
+|---|---|
+| overtime (periods > 4) | 2 (`0022500521`, `0022500637`) — handled; per-period seeding generalises |
+| ambiguous assister → null (never-guess) | **0** — the path never fired on real data |
+| unresolved assister → null | 0 (after the diacritic fix) |
+| substitution anomaly | 1 (`0022500335`) |
+| boxscore/observation disagreement | 2 (`0022500335`, `0022501100`) |
+| acted but absent from boxscore participation | 1 (`0022500969`) |
+
+Worth stating plainly: **the same-surname never-guess path still has no real-data
+coverage.** No Nets roster this season carried two players sharing a surname, so that
+guard remains synthetic-tested only.
 
 ```
 .venv/bin/python etl/run_game.py [GAME_ID]   # default 0022500610 (BKN vs PHX)

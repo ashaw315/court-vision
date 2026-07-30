@@ -9,12 +9,17 @@ Kept in one file so the review findings stay traceable as a set.
 
 import pytest
 from transforms.assister import Roster, resolve_assister
-from transforms.lineup_intervals import build_lineup_intervals, interval_for_event
+from transforms.lineup_intervals import (
+    _clock_seconds,
+    build_lineup_intervals,
+    interval_for_event,
+)
 from transforms.shot_events import (
     assisted_split,
     build_assist_edges,
     build_shot_events,
 )
+from verify import verify_game
 
 NETS = 1610612751
 OTHER = 1610612756
@@ -443,6 +448,157 @@ class TestFinding11FiveDoesNotCarryAcrossPeriods:
         assert any("disagree" in w.lower() for w in warnings), (
             f"the disagreement must be reported, not silently resolved; got {warnings}"
         )
+
+
+class TestFinding12DiacriticFolding:
+    """CRITICAL, found by the stage-3 full-season run — the first bug volume exposed.
+
+    The boxscore spells surnames with diacritics; play-by-play descriptions spell the same
+    players in plain ASCII. Real Nets/opponent examples:
+
+        boxscore 'Dëmin'    description 'Demin'
+        boxscore 'Diabaté'  description 'Diabate'
+        boxscore 'Salaün'   description 'Salaun'
+
+    `_normalise` dropped periods but not diacritics, so these never matched. The damage was
+    NOT limited to a missing assist edge — it cascaded:
+
+      * the assister resolved to None (never-guess path firing on a player we CAN identify),
+      * and, worse, `_seed_opening_five` could not subtract that player from the boxscore
+        participation set, so it computed SIX openers instead of five, returned None, and
+        the whole period degraded to observation or was dropped.
+
+    On game 0022500080 that meant 27 of 88 shots unattributed (69.3% coverage) and minutes
+    short by up to 571 seconds for one player. Three of the first three games failed
+    identically.
+    """
+
+    def test_ascii_description_matches_diacritic_roster(self):
+        roster = Roster({1642856: "Dëmin", 2: "Other"})
+        assert resolve_assister("Demin", roster) == (1642856, None)
+
+    def test_diacritic_description_matches_ascii_roster(self):
+        """Fold both directions — neither source is canonical."""
+        roster = Roster({1642856: "Demin", 2: "Other"})
+        assert resolve_assister("Dëmin", roster) == (1642856, None)
+
+    def test_real_season_examples_all_fold(self):
+        roster = Roster({1: "Dëmin", 2: "Diabaté", 3: "Salaün"})
+        assert resolve_assister("Demin", roster) == (1, None)
+        assert resolve_assister("Diabate", roster) == (2, None)
+        assert resolve_assister("Salaun", roster) == (3, None)
+
+    def test_folding_does_not_fuse_genuinely_different_surnames(self):
+        """Diacritic folding must not create NEW ambiguity between distinct players."""
+        roster = Roster({1: "Dëmin", 2: "Domin"})
+        assert resolve_assister("Demin", roster) == (1, None)
+        assert resolve_assister("Domin", roster) == (2, None)
+
+    def test_a_genuine_post_folding_collision_is_still_refused(self):
+        """If two rostered players fold to the same surname, still never guess."""
+        roster = Roster({1: "Dëmin", 2: "Demin"})
+        person_id, warning = resolve_assister("Demin", roster)
+        assert person_id is None
+        assert "ambiguous" in warning.lower()
+
+    def test_substitution_with_a_folded_surname_seeds_five_openers(self):
+        """The cascade guard: an unfoldable name broke opener seeding, not just assists."""
+        roster = Roster({1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "Dëmin"})
+        events = [
+            period_start(1, 2),
+            *[shot(2 + i, 2, "PT11M00.00S", p) for i, p in enumerate((1, 2, 3, 4))],
+            # 'Demin' (ASCII) comes in for player 5, whose roster entry is 'Dëmin'.
+            sub(10, 2, "PT08M00.00S", 5, "Demin", "E"),
+            shot(11, 2, "PT07M00.00S", 6),
+        ]
+        # Boxscore participation lists SIX players for the period: the five who opened
+        # plus the substitute. Only correct folding subtracts the substitute.
+        participation = {2: {1: 660, 2: 660, 3: 660, 4: 660, 5: 480, 6: 180}}
+        intervals, warnings = build_lineup_intervals(
+            events, "g", NETS, roster, starters=(1, 2, 3, 4, 5),
+            period_participation=participation, return_warnings=True,
+        )
+        assert intervals, "the period must not degrade because a name had a diaeresis"
+        assert intervals[0]["onCourt"] == (1, 2, 3, 4, 5)
+        assert not any("refusing to guess" in w for w in warnings)
+
+
+class TestFinding13OutOfOrderSubstitutionClocks:
+    """Stage-3 finding: SOURCE DATA sometimes mis-stamps a substitution's clock.
+
+    In 10 of the 82 games exactly ONE substitution carries a clock EARLIER in the period
+    than the substitution before it, despite a higher `actionNumber`. Real example, game
+    0022500335 period 4:
+
+        #614  PT07M12.00S  SUB: Wolf FOR Demin
+        #620  PT10M46.00S  SUB: Williams FOR Wolf     <- 3.5 minutes EARLIER
+        #621  PT10M46.00S  SUB: Mann FOR Saraf
+
+    Because intervals are opened in `actionNumber` order, a backwards clock produces an
+    interval whose end precedes its start, which then overlaps its neighbours and corrupts
+    every duration after it. The verifier catches this precisely — all 10 affected games
+    failed `intervals tile each period contiguously`, and all 72 unaffected games passed,
+    a perfect 1:1 correlation with zero false positives.
+
+    NOT FIXED HERE, deliberately. Reconstructing the true intent means guessing which of
+    two contradictory stamps is right, and CLAUDE.md's rule is that we do not guess about
+    real players. These tests pin the CURRENT behaviour: the anomaly is DETECTED and the
+    game is excluded from the aggregate, rather than silently producing wrong minutes.
+    Whoever fixes it should decide the policy first — see etl/README.md.
+    """
+
+    def _events_with_backwards_sub(self):
+        return [
+            period_start(1, 1),
+            *[shot(2 + i, 1, "PT11M00.00S", p) for i, p in enumerate(STARTERS)],
+            sub(10, 1, "PT08M00.00S", 1, "F", "A"),
+            # Higher actionNumber, but a clock EARLIER in the period. Source anomaly.
+            sub(20, 1, "PT10M00.00S", 2, "G", "B"),
+            shot(30, 1, "PT02M00.00S", 6),
+        ]
+
+    def test_the_verifier_detects_the_resulting_broken_tiling(self):
+        """The guard that made this findable at all."""
+        intervals = build_lineup_intervals(
+            self._events_with_backwards_sub(), "g", NETS, ROSTER, starters=STARTERS
+        )
+        report = verify_game(
+            [], intervals, self._events_with_backwards_sub(), NETS, STARTERS,
+            set(ROSTER.by_person_id),
+        )
+        failed = [name for name, passed, _ in report["checks"] if not passed]
+        assert "intervals tile each period contiguously" in failed, (
+            "a backwards substitution clock must be reported, not absorbed"
+        )
+
+    def test_a_backwards_clock_produces_a_detectably_inverted_interval(self):
+        """Pins the mechanism: end precedes start, which is what tiling detects."""
+        intervals = build_lineup_intervals(
+            self._events_with_backwards_sub(), "g", NETS, ROSTER, starters=STARTERS
+        )
+        inverted = [
+            iv for iv in intervals
+            if _clock_seconds(iv["startClock"]) < _clock_seconds(iv["endClock"])
+        ]
+        assert inverted, "expected an inverted interval from the mis-stamped clock"
+
+    def test_well_ordered_substitutions_still_tile_cleanly(self):
+        """Guards against a future 'fix' that flags healthy games too."""
+        events = [
+            period_start(1, 1),
+            *[shot(2 + i, 1, "PT11M00.00S", p) for i, p in enumerate(STARTERS)],
+            sub(10, 1, "PT10M00.00S", 2, "G", "B"),
+            sub(20, 1, "PT08M00.00S", 1, "F", "A"),
+            shot(30, 1, "PT02M00.00S", 6),
+        ]
+        intervals = build_lineup_intervals(
+            events, "g", NETS, ROSTER, starters=STARTERS
+        )
+        report = verify_game(
+            [], intervals, events, NETS, STARTERS, set(ROSTER.by_person_id),
+        )
+        failed = [name for name, passed, _ in report["checks"] if not passed]
+        assert "intervals tile each period contiguously" not in failed
 
 
 class TestRobustnessFixes:

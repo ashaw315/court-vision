@@ -14,6 +14,7 @@ edge is merely incomplete.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 # The assist tag. Deliberately anchored on the literal " AST)" suffix so sibling tags
 # with the same parenthesised shape — "(3 PTS)", "(Williams 1 BLK)" — cannot match.
@@ -53,12 +54,25 @@ def _normalise(name: str) -> str:
     player. Periods are therefore dropped entirely, so "Porter Jr", "Porter Jr.",
     "J.J. Barea" and "JJ Barea" all fold together.
 
+    Stage-3 finding (#12): DIACRITICS are also inconsistent between sources. The boxscore
+    writes "Dëmin", "Diabaté", "Salaün"; play-by-play descriptions write "Demin",
+    "Diabate", "Salaun". Unfolded, those never matched — and the damage was not merely a
+    missing assist edge: the unresolved name also broke per-period opener seeding, because
+    the player could not be subtracted from the boxscore participation set, so the period
+    degraded or was dropped entirely. Combining marks are therefore stripped.
+
     Apostrophes and hyphens are PRESERVED: they distinguish real, different names
     (O'Neale, Hayes-Davis, Gilgeous-Alexander) rather than varying by convention.
-    Crucially, dropping periods does not fuse distinct players — "Porter Jr." and
-    "Porter" still normalise differently, because the suffix itself remains.
+    Crucially, neither fold fuses distinct players — "Porter Jr." and "Porter" still
+    normalise differently, and a genuine post-folding collision is still reported as
+    ambiguous rather than guessed.
     """
-    folded = name.strip().lower().replace(".", "")
+    # NFD splits "ë" into "e" + combining diaeresis; dropping the combining marks leaves
+    # the base letters. Safer than a hand-written character map, which would miss the
+    # next unusual name.
+    decomposed = unicodedata.normalize("NFD", name)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    folded = stripped.strip().lower().replace(".", "")
     return re.sub(r"\s+", " ", folded).strip()
 
 
