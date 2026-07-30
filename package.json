@@ -13,7 +13,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "test:etl": ".venv/bin/ruff check . && .venv/bin/python -m pytest -q && vitest run tests/etl-output.test.ts",
-    "lint:py": ".venv/bin/ruff check ."
+    "lint:py": ".venv/bin/ruff check .",
+    "db:seed": "tsx src/db/seed.ts",
+    "db:verify": "tsx src/db/verify.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -27,9 +29,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
+    "tsx": "^4.23.1",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }
