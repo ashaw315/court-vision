@@ -8,6 +8,8 @@ export default defineConfig({
     // network assembly, derived math, and the API contract — none of which need a
     // DOM. SVG/D3 output gets visual review, not assertions.
     environment: 'node',
+    // Loads .env.local/.env so DB-backed tests can reach Neon.
+    setupFiles: ['./vitest.setup.ts'],
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
   },
   resolve: {

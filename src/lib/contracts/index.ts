@@ -37,3 +37,14 @@ export {
   Player,
   ShotEvent,
 } from './entities';
+
+export {
+  ApiError,
+  AssistedSplit,
+  GrainResponse,
+  LineupsResponse,
+  LineupSummary,
+  PlayerRef,
+  PlayersResponse,
+  ResponseScope,
+} from './responses';
