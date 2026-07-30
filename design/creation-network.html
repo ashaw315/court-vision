@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #EDE7D8; }
+  a { color: #A8442A; text-decoration: none; }
+  a:hover { color: #8A3520; }
+  doc-page:not(:defined) { visibility: hidden; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @media print {
+    * { animation-delay: -99s !important; animation-duration: .001s !important;
+        animation-iteration-count: 1 !important; animation-fill-mode: both !important;
+        animation-play-state: running !important; transition-duration: 0s !important; }
+  }
+</style>
+<script src="./doc-page.js"></script>
+</helmet>
+
+
+<doc-page size="letter" orientation="landscape" content-width="1440px" content-height="1215px">
+<div style="width: 1440px; margin: 0 auto; background: #F2EDE0; color: #1E1B16; font-family: 'JetBrains Mono', monospace; padding: 34px 56px 44px; box-sizing: border-box;">
+
+  <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 9.5px; letter-spacing: 0.18em; color: #7C7261; padding-bottom: 9px; border-bottom: 1px solid #C9C0AC;">
+    <span>FIG. 12b — CREATION NETWORK · FIVE-MAN UNIT · POSITION AS ROLE</span>
+    <span>N.º 0034 · 05 · CVN · MMXXVI</span>
+  </div>
+
+  <div style="display: flex; align-items: flex-end; gap: 18px; padding-top: 22px;">
+    <h1 style="font-family: 'Playfair Display', serif; font-weight: 700; font-size: 58px; line-height: 0.9; letter-spacing: -0.012em; margin: 0;">Creation Network</h1>
+    <div style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 17px; line-height: 1.22; color: #4A4438; padding-bottom: 4px;">arranged by role —<br />creators above, scorers below</div>
+    <div style="flex: 1;"></div>
+    <div style="text-align: right; font-size: 9.5px; letter-spacing: 0.16em; color: #7C7261; padding-bottom: 6px;">VERTICAL AXIS · CREATION ORIGINATED<br />ARCS SUM TO 100% OF ASSISTED CREATION</div>
+  </div>
+
+  <div style="display: flex; align-items: baseline; gap: 26px; font-size: 9.5px; letter-spacing: 0.16em; color: #9A8F7B; padding-top: 10px;">
+    <span>§A / RESTING STATE · ALL CONNECTIONS SHOWN</span>
+    <span style="color: #8A3520;">TOP CONNECTION 31% · CONCENTRATED</span>
+  </div>
+
+  <div style="position: relative; margin-top: 4px;">
+    <svg viewBox="0 0 1060 700" style="display: block; width: 100%; height: auto; overflow: visible;">
+      <defs>
+        <marker id="ah-warm" viewBox="0 0 8 8" refX="6.2" refY="3" markerWidth="6.4" markerHeight="6.4" orient="auto">
+          <path d="M0.8,0.8 L6,3 L0.8,5.2" fill="none" stroke="#A8442A" strokeWidth="0.75" strokeLinecap="round" />
+        </marker>
+        <marker id="ah-acid" viewBox="0 0 8 8" refX="6.2" refY="3" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0.8,0.8 L6,3 L0.8,5.2" fill="none" stroke="#A9BE12" strokeWidth="0.9" strokeLinecap="round" />
+        </marker>
+        <clipPath id="hf-0">
+          <rect x="508.0" y="161.44" width="44" height="44"></rect>
+        </clipPath>
+        <clipPath id="hf-1">
+          <rect x="228.0" y="552.36" width="44" height="44"></rect>
+        </clipPath>
+        <clipPath id="hf-2">
+          <rect x="330.0" y="349.12" width="44" height="44"></rect>
+        </clipPath>
+        <clipPath id="hf-3">
+          <rect x="806.0" y="549.28" width="44" height="44"></rect>
+        </clipPath>
+        <clipPath id="hf-4">
+          <rect x="722.0" y="347.72" width="44" height="44"></rect>
+        </clipPath>
+      </defs>
+
+      <g>
+        <line x1="70" y1="118" x2="990" y2="118" stroke="#C9C0AC" strokeWidth="0.6" strokeDasharray="1 5"></line>
+        <line x1="70" y1="600" x2="990" y2="600" stroke="#C9C0AC" strokeWidth="0.6" strokeDasharray="1 5"></line>
+        <text x="70" y="108" fill="#9A8F7B" style="font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 0.2em;">ORIGINATES CREATION</text>
+        <text x="70" y="616" fill="#9A8F7B" style="font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 0.2em;">RECEIVES CREATION</text>
+      </g>
+
+      <g>
+        <sc-for list="{{ hierStrands }}" as="s" hint-placeholder-count="40">
+          <path d="{{ s.d }}" fill="none" stroke="{{ s.color }}" strokeWidth="{{ s.w }}" strokeDasharray="{{ s.dash }}" strokeLinecap="round" opacity="{{ s.op }}" markerEnd="{{ s.marker }}"></path>
+        </sc-for>
+      </g>
+
+      <g>
+        <text x="423.8" y="395.4" textAnchor="middle" fill="#8A3520" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em;">31%</text>
+        <text x="768" y="296" textAnchor="middle" fill="#7C8C0A" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em;">17%</text>
+        <text x="455.2" y="258.6" textAnchor="middle" fill="#8A3520" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em;">11%</text>
+        <text x="521.1" y="522.1" textAnchor="middle" fill="#8A3520" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em;">9%</text>
+        <text x="623.1" y="419.3" textAnchor="middle" fill="#7C8C0A" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em;">7%</text>
+      </g>
+
+      <g>
+        <g>
+          <circle cx="530" cy="150" r="22" fill="#F2EDE0"></circle>
+          <circle cx="530" cy="150" r="22" fill="#A8442A" opacity="0.82" clipPath="url(#hf-0)"></circle>
+          <line x1="509.5" y1="161.44" x2="550.5" y2="161.44" stroke="#6E6555" strokeWidth="0.6" opacity="0.6"></line>
+          <circle cx="530" cy="150" r="22" fill="none" stroke="#1E1B16" strokeWidth="0.85"></circle>
+          <text x="530" y="100" textAnchor="middle" fill="#1E1B16" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.12em;">G. HALDEN</text>
+          <text x="530" y="113" textAnchor="middle" fill="#8A3520" style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.14em;">24% ASSISTED</text>
+          <text x="530" y="87" textAnchor="middle" fill="#9A8F7B" style="font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 0.2em;">01</text>
+        </g>
+        <g>
+          <circle cx="250" cy="566" r="22" fill="#F2EDE0"></circle>
+          <circle cx="250" cy="566" r="22" fill="#A8442A" opacity="0.82" clipPath="url(#hf-1)"></circle>
+          <line x1="229.5" y1="552.36" x2="270.5" y2="552.36" stroke="#6E6555" strokeWidth="0.6" opacity="0.6"></line>
+          <circle cx="250" cy="566" r="22" fill="none" stroke="#1E1B16" strokeWidth="0.85"></circle>
+          <text x="250" y="618" textAnchor="middle" fill="#1E1B16" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.12em;">R. OKONKWO</text>
+          <text x="250" y="631" textAnchor="middle" fill="#8A3520" style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.14em;">81% ASSISTED</text>
+          <text x="250" y="605" textAnchor="middle" fill="#9A8F7B" style="font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 0.2em;">02</text>
+        </g>
+        <g>
+          <circle cx="352" cy="350" r="22" fill="#F2EDE0"></circle>
+          <circle cx="352" cy="350" r="22" fill="#A8442A" opacity="0.82" clipPath="url(#hf-2)"></circle>
+          <line x1="331.5" y1="349.12" x2="372.5" y2="349.12" stroke="#6E6555" strokeWidth="0.6" opacity="0.6"></line>
+          <circle cx="352" cy="350" r="22" fill="none" stroke="#1E1B16" strokeWidth="0.85"></circle>
+          <text x="306" y="354" textAnchor="end" fill="#1E1B16" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.12em;">T. VASQUEZ</text>
+          <text x="306" y="367" textAnchor="end" fill="#8A3520" style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.14em;">52% ASSISTED</text>
+          <text x="306" y="341" textAnchor="end" fill="#9A8F7B" style="font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 0.2em;">03</text>
+        </g>
+        <g>
+          <circle cx="828" cy="566" r="22" fill="#F2EDE0"></circle>
+          <circle cx="828" cy="566" r="22" fill="#A8442A" opacity="0.82" clipPath="url(#hf-3)"></circle>
+          <line x1="807.5" y1="549.28" x2="848.5" y2="549.28" stroke="#6E6555" strokeWidth="0.6" opacity="0.6"></line>
+          <circle cx="828" cy="566" r="22" fill="none" stroke="#1E1B16" strokeWidth="0.85"></circle>
+          <text x="828" y="618" textAnchor="middle" fill="#1E1B16" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.12em;">D. MEIER</text>
+          <text x="828" y="631" textAnchor="middle" fill="#8A3520" style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.14em;">88% ASSISTED</text>
+          <text x="828" y="605" textAnchor="middle" fill="#9A8F7B" style="font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 0.2em;">04</text>
+        </g>
+        <g>
+          <circle cx="744" cy="342" r="22" fill="#F2EDE0"></circle>
+          <circle cx="744" cy="342" r="22" fill="#A8442A" opacity="0.82" clipPath="url(#hf-4)"></circle>
+          <line x1="723.5" y1="347.72" x2="764.5" y2="347.72" stroke="#6E6555" strokeWidth="0.6" opacity="0.6"></line>
+          <circle cx="744" cy="342" r="22" fill="none" stroke="#1E1B16" strokeWidth="0.85"></circle>
+          <text x="790" y="346" textAnchor="start" fill="#1E1B16" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.12em;">A. SORENSEN</text>
+          <text x="790" y="359" textAnchor="start" fill="#8A3520" style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.14em;">37% ASSISTED</text>
+          <text x="790" y="333" textAnchor="start" fill="#9A8F7B" style="font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 0.2em;">05</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <div style="margin-top: 18px; border-top: 1px solid #C9C0AC; padding-top: 14px; display: flex; align-items: flex-start; gap: 60px;">
+    <div style="display: flex; flex-direction: column; gap: 9px;">
+      <div style="font-size: 9px; letter-spacing: 0.18em; color: #9A8F7B;">§B / ENCODING</div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="92" height="14" style="display: block; overflow: visible;">
+          <path d="M2,3 C26,3 62,3 90,3" fill="none" stroke="#A8442A" strokeWidth="1" strokeDasharray="0.1 5.5" strokeLinecap="round" opacity="0.6"></path>
+          <path d="M2,8 C26,8 62,8 90,8" fill="none" stroke="#A8442A" strokeWidth="0.5" strokeLinecap="round" opacity="0.6"></path>
+          <path d="M2,9.6 C26,9.6 62,9.6 90,9.6" fill="none" stroke="#A8442A" strokeWidth="0.5" strokeLinecap="round" opacity="0.6"></path>
+          <path d="M2,11.2 C26,11.2 62,11.2 90,11.2" fill="none" stroke="#A8442A" strokeWidth="0.5" strokeLinecap="round" opacity="0.6"></path>
+          <path d="M2,12.8 C26,12.8 62,12.8 90,12.8" fill="none" stroke="#A8442A" strokeWidth="0.5" strokeLinecap="round" opacity="0.6"></path>
+        </svg>
+        <span style="font-size: 9.5px; letter-spacing: 0.13em; color: #4A4438;">DENSITY · SHARE OF UNIT CREATION (1.5% → 31%)</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="92" height="12" style="display: block; overflow: visible;">
+          <path d="M2,4 C26,4 62,4 90,4" fill="none" stroke="#A8442A" strokeWidth="1.6" strokeLinecap="round" opacity="0.8"></path>
+          <path d="M2,10 C26,10 62,10 90,10" fill="none" stroke="#A9BE12" strokeWidth="1.6" strokeLinecap="round"></path>
+        </svg>
+        <span style="font-size: 9.5px; letter-spacing: 0.13em; color: #4A4438;">HUE · SHOT VALUE — ACID = 1.42+ PTS / ATTEMPT</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="92" height="26" style="display: block; overflow: visible;">
+          <defs>
+            <clipPath id="lg-a"><rect x="0" y="16.4" width="30" height="12"></rect></clipPath>
+            <clipPath id="lg-b"><rect x="34" y="6.6" width="30" height="22"></rect></clipPath>
+          </defs>
+          <circle cx="12" cy="13" r="11" fill="#A8442A" opacity="0.82" clipPath="url(#lg-a)"></circle>
+          <circle cx="12" cy="13" r="11" fill="none" stroke="#1E1B16" strokeWidth="0.85"></circle>
+          <circle cx="46" cy="13" r="11" fill="#A8442A" opacity="0.82" clipPath="url(#lg-b)"></circle>
+          <circle cx="46" cy="13" r="11" fill="none" stroke="#1E1B16" strokeWidth="0.85"></circle>
+        </svg>
+        <span style="font-size: 9.5px; letter-spacing: 0.13em; color: #4A4438;">NODE FILL · ASSISTED SPLIT — EMPTY = SELF-CREATOR</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 9px; max-width: 330px;">
+      <div style="font-size: 9px; letter-spacing: 0.18em; color: #9A8F7B;">§C / READING</div>
+      <div style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 14.5px; line-height: 1.5; color: #4A4438;">Placed by origination, the shape of the unit is one node feeding two: Halden sits alone at the top, Okonkwo and Meier hang at the bottom edge on 81% and 88% assisted.</div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 7px;">
+      <div style="font-size: 9px; letter-spacing: 0.18em; color: #9A8F7B;">§D / ORIGINATION</div>
+      <sc-for list="{{ origination }}" as="o" hint-placeholder-count="5">
+        <div style="display: flex; align-items: center; gap: 10px; font-size: 9.5px; letter-spacing: 0.13em; color: #4A4438;">
+          <span style="width: 106px;">{{ o.name }}</span>
+          <span style="width: 170px; height: 3px; background: #E2DAC7; display: block; position: relative;">
+            <span style="position: absolute; left: 0; top: 0; bottom: 0; background: #A8442A; opacity: 0.85; width: {{ o.barWidth }};"></span>
+          </span>
+          <span style="color: #8A3520;">{{ o.pct }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="flex: 1;"></div>
+
+    <div style="text-align: right; font-size: 9px; letter-spacing: 0.16em; color: #9A8F7B; line-height: 1.8;">COURT VISION NETWORK<br />PLATE 1 / 2 — POSITION AS ROLE</div>
+  </div>
+</div>
+</doc-page>
+<doc-page size="letter" orientation="landscape" content-width="1440px" content-height="1215px">
+<div style="width: 1440px; margin: 0 auto; background: #F2EDE0; color: #1E1B16; font-family: 'JetBrains Mono', monospace; padding: 34px 56px 44px; box-sizing: border-box;">
+
+  <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 9.5px; letter-spacing: 0.18em; color: #7C7261; padding-bottom: 9px; border-bottom: 1px solid #C9C0AC;">
+    <span>FIG. 12c — SPATIAL SIGNATURE · ONE CONNECTION</span>
+    <span>N.º 0034 · 05 · CVN · MMXXVI</span>
+  </div>
+
+  <div style="display: flex; align-items: flex-end; gap: 18px; padding-top: 22px;">
+    <h1 style="font-family: 'Playfair Display', serif; font-weight: 700; font-size: 58px; line-height: 0.9; letter-spacing: -0.012em; margin: 0;">Spatial Signature</h1>
+    <div style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 17px; line-height: 1.22; color: #4A4438; padding-bottom: 4px;">where this connection<br />puts the ball in</div>
+    <div style="flex: 1;"></div>
+    <div style="text-align: right; font-size: 9.5px; letter-spacing: 0.16em; color: #7C7261; padding-bottom: 6px;">HALF COURT · MADE BASKETS ONLY<br />POSITION = SHOT LOCATION, AT REST</div>
+  </div>
+
+  <div style="font-size: 9.5px; letter-spacing: 0.16em; color: #8A3520; padding-top: 10px;">HALDEN → OKONKWO · 31% OF UNIT CREATION · 18 BASKETS</div>
+
+  <div style="display: flex; align-items: flex-start; gap: 56px; margin-top: 10px;">
+    <div style="flex: 1; max-width: 760px;">
+      <svg viewBox="0 0 1010 830" style="display: block; width: 100%; height: auto; overflow: visible;">
+        <g fill="none" stroke="#6E6555" strokeWidth="0.9" opacity="0.6" strokeLinecap="round">
+          <path d="M30,790 L30,30 L980,30 L980,790"></path>
+          <rect x="353" y="30" width="304" height="361"></rect>
+          <circle cx="505" cy="391" r="114"></circle>
+          <path d="M85.4,295.9 L90.0,307.0 L94.8,317.9 L100.0,328.7 L105.4,339.4 L111.1,349.9 L117.1,360.3 L123.3,370.5 L129.8,380.6 L136.6,390.4 L143.7,400.1 L151.0,409.6 L158.5,418.9 L166.3,428.0 L174.3,436.9 L182.6,445.5 L191.1,454.0 L199.8,462.2 L208.7,470.2 L217.8,477.9 L227.2,485.4 L236.7,492.6 L246.4,499.6 L256.3,506.4 L266.4,512.8 L276.7,519.0 L287.1,524.9 L297.6,530.6 L308.3,535.9 L319.2,541.0 L330.1,545.8 L341.2,550.3 L352.4,554.5 L363.8,558.4 L375.2,562.0 L386.7,565.3 L398.3,568.2 L409.9,570.9 L421.7,573.3 L433.5,575.3 L445.3,577.1 L457.2,578.5 L469.1,579.6 L481.1,580.4 L493.0,580.9 L505.0,581.0 L517.0,580.9 L528.9,580.4 L540.9,579.6 L552.8,578.5 L564.7,577.1 L576.5,575.3 L588.3,573.3 L600.1,570.9 L611.7,568.2 L623.3,565.3 L634.8,562.0 L646.2,558.4 L657.6,554.5 L668.8,550.3 L679.9,545.8 L690.8,541.0 L701.7,535.9 L712.4,530.6 L722.9,524.9 L733.3,519.0 L743.6,512.8 L753.7,506.4 L763.6,499.6 L773.3,492.6 L782.8,485.4 L792.2,477.9 L801.3,470.2 L810.2,462.2 L818.9,454.0 L827.4,445.5 L835.7,436.9 L843.7,428.0 L851.5,418.9 L859.0,409.6 L866.3,400.1 L873.4,390.4 L880.2,380.6 L886.7,370.5 L892.9,360.3 L898.9,349.9 L904.6,339.4 L910.0,328.7 L915.2,317.9 L920.0,307.0 L924.6,295.9"></path>
+          <line x1="87" y1="30" x2="87" y2="296"></line>
+          <line x1="923" y1="30" x2="923" y2="296"></line>
+        </g>
+        <g fill="none" stroke="#1E1B16" strokeWidth="1.1" opacity="0.8" strokeLinecap="round">
+          <line x1="448" y1="106" x2="562" y2="106"></line>
+          <circle cx="505" cy="129.8" r="14"></circle>
+        </g>
+        <g stroke="#6E6555" strokeWidth="0.6" opacity="0.35" strokeDasharray="1 5">
+          <line x1="505" y1="30" x2="505" y2="790"></line>
+          <line x1="30" y1="790" x2="980" y2="790"></line>
+        </g>
+        <g>
+          <circle cx="486" cy="96.5" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="486" cy="96.5" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="524" cy="115.5" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="524" cy="115.5" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="467" cy="144" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="467" cy="144" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="543" cy="153.5" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="543" cy="153.5" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="505" cy="172.5" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="505" cy="172.5" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="448" cy="106" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="448" cy="106" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="562" cy="115.5" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="562" cy="115.5" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="372" cy="258" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="372" cy="258" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="657" cy="239" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="657" cy="239" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="410" cy="353" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="410" cy="353" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="619" cy="334" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="619" cy="334" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="505" cy="391" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+          <circle cx="505" cy="391" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+        </g>
+        <g>
+          <circle cx="71.8" cy="163" r="5.4" fill="#A9BE12" opacity="0.92"></circle>
+          <circle cx="71.8" cy="163" r="9.6" fill="none" stroke="#7C8C0A" strokeWidth="0.7" opacity="0.75"></circle>
+        </g>
+        <g>
+          <circle cx="938.2" cy="201" r="5.4" fill="#A9BE12" opacity="0.92"></circle>
+          <circle cx="938.2" cy="201" r="9.6" fill="none" stroke="#7C8C0A" strokeWidth="0.7" opacity="0.75"></circle>
+        </g>
+        <g>
+          <circle cx="220" cy="486" r="5.4" fill="#A9BE12" opacity="0.92"></circle>
+          <circle cx="220" cy="486" r="9.6" fill="none" stroke="#7C8C0A" strokeWidth="0.7" opacity="0.75"></circle>
+        </g>
+        <g>
+          <circle cx="809" cy="524" r="5.4" fill="#A9BE12" opacity="0.92"></circle>
+          <circle cx="809" cy="524" r="9.6" fill="none" stroke="#7C8C0A" strokeWidth="0.7" opacity="0.75"></circle>
+        </g>
+        <g>
+          <circle cx="505" cy="600" r="5.4" fill="#A9BE12" opacity="0.92"></circle>
+          <circle cx="505" cy="600" r="9.6" fill="none" stroke="#7C8C0A" strokeWidth="0.7" opacity="0.75"></circle>
+        </g>
+        <g>
+          <circle cx="666.5" cy="609.5" r="5.4" fill="#A9BE12" opacity="0.92"></circle>
+          <circle cx="666.5" cy="609.5" r="9.6" fill="none" stroke="#7C8C0A" strokeWidth="0.7" opacity="0.75"></circle>
+        </g>
+        <text x="30" y="812" fill="#9A8F7B" style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.2em;">HALF COURT · 50 FT WIDE · CROPPED AT 40 FT</text>
+        <text x="980" y="812" textAnchor="end" fill="#9A8F7B" style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.2em;">FIG. 12c</text>
+      </svg>
+    </div>
+
+    <div style="width: 330px; display: flex; flex-direction: column; gap: 26px; padding-top: 8px;">
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 9px; letter-spacing: 0.18em; color: #9A8F7B;">§E / ENCODING</div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <svg width="30" height="20" style="display: block;">
+            <circle cx="14" cy="10" r="5.8" fill="none" stroke="#A8442A" strokeWidth="0.9" opacity="0.85"></circle>
+            <circle cx="14" cy="10" r="1.1" fill="#A8442A" opacity="0.85"></circle>
+          </svg>
+          <span style="font-size: 9.5px; letter-spacing: 0.13em; color: #4A4438;">TWO — 12 MADE</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <svg width="30" height="22" style="display: block;">
+            <circle cx="14" cy="11" r="5.4" fill="#A9BE12" opacity="0.92"></circle>
+            <circle cx="14" cy="11" r="9.6" fill="none" stroke="#7C8C0A" strokeWidth="0.7" opacity="0.75"></circle>
+          </svg>
+          <span style="font-size: 9.5px; letter-spacing: 0.13em; color: #4A4438;">THREE — 6 MADE · HIGH VALUE</span>
+        </div>
+        <div style="font-size: 9.5px; letter-spacing: 0.13em; color: #4A4438; line-height: 1.7; padding-top: 2px;">ONE MARK = ONE MADE BASKET,<br />PLOTTED AT ITS COURT LOCATION.</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 9px; letter-spacing: 0.18em; color: #9A8F7B;">§F / READING</div>
+        <div style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 14.5px; line-height: 1.5; color: #4A4438;">The unit's dominant connection is a rim connection: two thirds of it lands inside the paint, and the six threes it does produce come almost entirely from the corners and the left wing.</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #C9C0AC; padding-top: 12px; font-size: 9.5px; letter-spacing: 0.13em; color: #4A4438;">
+        <div style="display: flex; justify-content: space-between;"><span>AT RIM</span><span style="color: #8A3520;">7</span></div>
+        <div style="display: flex; justify-content: space-between;"><span>MID-RANGE</span><span style="color: #8A3520;">5</span></div>
+        <div style="display: flex; justify-content: space-between;"><span>THREE</span><span style="color: #7C8C0A;">6</span></div>
+        <div style="display: flex; justify-content: space-between;"><span>POINTS FROM CONNECTION</span><span style="color: #8A3520;">42</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 22px; border-top: 1px solid #C9C0AC; padding-top: 14px; display: flex; justify-content: space-between; font-size: 9px; letter-spacing: 0.16em; color: #9A8F7B;">
+    <span>PAIRS WITH FIG. 12b — CREATION NETWORK</span>
+    <span>COURT VISION NETWORK · PLATE 2 / 2 — SPATIAL SIGNATURE</span>
+  </div>
+</div>
+</doc-page>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1215},&quot;accentColor&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#A9BE12&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#A9BE12&quot;,&quot;#C3D62E&quot;,&quot;#8FA80E&quot;,&quot;#D4C21A&quot;],&quot;section&quot;:&quot;Encoding&quot;},&quot;arcCurvature&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0.2,&quot;min&quot;:0,&quot;max&quot;:0.4,&quot;step&quot;:0.01,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Arcs&quot;},&quot;weaveSpread&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2.2,&quot;min&quot;:0.4,&quot;max&quot;:4,&quot;step&quot;:0.05,&quot;tsType&quot;:&quot;number&quot;,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Arcs&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const acid = this.props.accentColor ?? "#A9BE12";
+    const warm = "#A8442A";
+    const curve = this.props.arcCurvature ?? 0.2;
+    const weave = this.props.weaveSpread ?? 2.2;
+    const R = 22, GAP = 7;
+
+    const players = [
+      { name: "G. HALDEN", split: 0.24 },
+      { name: "R. OKONKWO", split: 0.81 },
+      { name: "T. VASQUEZ", split: 0.52 },
+      { name: "D. MEIER", split: 0.88 },
+      { name: "A. SORENSEN", split: 0.37 }
+    ];
+
+    // [creator, scorer, share of unit's assisted creation (%), high shot value]
+    const links = [
+      [0, 1, 31, 0], [0, 3, 17, 1], [0, 2, 11, 0], [0, 4, 5, 0],
+      [4, 1, 9, 0], [1, 2, 6, 0], [2, 3, 7, 1], [2, 0, 4, 0],
+      [1, 0, 3, 0], [4, 3, 3, 0], [3, 1, 2.5, 0], [3, 4, 1.5, 0]
+    ];
+
+    const fmt = function (v) { return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + "%"; };
+
+    const mkNodes = (pts, prefix, anchorFn) => players.map(function (p, i) {
+      const pt = pts[i];
+      const a = anchorFn(pt, i);
+      const fillTop = pt.y + R - 2 * R * p.split;
+      return {
+        x: pt.x, y: pt.y, name: p.name,
+        readout: Math.round(p.split * 100) + "% ASSISTED",
+        idx: "0" + (i + 1),
+        clipId: prefix + i,
+        clipRef: "url(#" + prefix + i + ")",
+        clipX: pt.x - R, clipY: fillTop, clipW: 2 * R, clipH: 2 * R,
+        hx1: pt.x - R + 1.5, hx2: pt.x + R - 1.5, hy: fillTop,
+        tx: a.tx, ty: a.ty, ty2: a.ty + 13, ix: a.tx, iy: a.iy,
+        anchor: a.anchor
+      };
+    });
+
+    const buildStrands = function (pts) {
+      const beads = [], ribbons = [], hot = [], labels = [];
+      links.forEach(function (l) {
+        const a = pts[l[0]], b = pts[l[1]], share = l[2], isHot = l[3] === 1;
+        let dx = b.x - a.x, dy = b.y - a.y;
+        const len = Math.hypot(dx, dy);
+        dx /= len; dy /= len;
+        const sx = a.x + dx * (R + GAP), sy = a.y + dy * (R + GAP);
+        const ex = b.x - dx * (R + GAP + 4), ey = b.y - dy * (R + GAP + 4);
+        const mx = (sx + ex) / 2, my = (sy + ey) / 2;
+        const bow = len * curve;
+        const color = isHot ? acid : warm;
+        const dense = share >= 6;
+        const n = dense ? Math.max(3, Math.min(13, Math.round(share / 2.1))) : (share >= 3 ? 2 : 1);
+        const bucket = isHot ? hot : (dense ? ribbons : beads);
+        const mid = (n - 1) / 2;
+        for (let j = 0; j < n; j++) {
+          const off = bow + (j - mid) * weave;
+          const qx = mx + dy * off, qy = my - dx * off;
+          const center = Math.abs(j - mid) < 0.6;
+          bucket.push({
+            d: "M" + sx.toFixed(1) + "," + sy.toFixed(1) + " Q" + qx.toFixed(1) + "," + qy.toFixed(1) + " " + ex.toFixed(1) + "," + ey.toFixed(1),
+            color: color,
+            w: dense ? 0.5 : 1.05,
+            dash: dense ? "none" : "0.1 5.4",
+            op: dense ? (isHot ? 0.8 : 0.58) : (isHot ? 0.78 : 0.55),
+            marker: center ? (isHot ? "url(#ah-acid)" : "url(#ah-warm)") : "none"
+          });
+        }
+        if (share >= 7) {
+          const lo = bow + (dense ? mid * weave : 0);
+          const px = 0.25 * sx + 0.5 * (mx + dy * lo) + 0.25 * ex;
+          const py = 0.25 * sy + 0.5 * (my - dx * lo) + 0.25 * ey;
+          let ox = px - 530, oy = py - 360;
+          const on = Math.hypot(ox, oy) || 1;
+          labels.push({
+            x: (px + (ox / on) * 15).toFixed(1),
+            y: (py + (oy / on) * 15 + 3).toFixed(1),
+            text: fmt(share),
+            color: isHot ? "#7C8C0A" : "#8A3520"
+          });
+        }
+      });
+      return { strands: beads.concat(ribbons, hot), labels: labels };
+    };
+
+    // --- Plate 1: even ring
+    const cx = 530, cy = 340, ring = 240;
+    const ringPts = players.map(function (p, i) {
+      const ang = (-90 + i * 72) * Math.PI / 180;
+      return { x: cx + ring * Math.cos(ang), y: cy + ring * Math.sin(ang), ang: ang };
+    });
+    const ringNodes = mkNodes(ringPts, "rf-", function (pt) {
+      const ux = Math.cos(pt.ang), uy = Math.sin(pt.ang);
+      const anchor = Math.abs(ux) < 0.2 ? "middle" : (ux > 0 ? "start" : "end");
+      const lx = pt.x + ux * 40, ly = pt.y + uy * 42;
+      const up = uy < -0.5;
+      return { tx: lx, ty: ly + (up ? -14 : 4), iy: ly + (up ? -27 : -9), anchor: anchor };
+    });
+    const ringBuilt = buildStrands(ringPts);
+
+    // --- Plate 2: position as role (vertical axis = creation originated)
+    const hierPts = [
+      { x: 530, y: 150 },
+      { x: 250, y: 566 },
+      { x: 352, y: 350 },
+      { x: 828, y: 566 },
+      { x: 744, y: 342 }
+    ];
+    const hierAnchor = [
+      { tx: 530, ty: 100, iy: 87, anchor: "middle" },
+      { tx: 250, ty: 618, iy: 605, anchor: "middle" },
+      { tx: 306, ty: 354, iy: 341, anchor: "end" },
+      { tx: 828, ty: 618, iy: 605, anchor: "middle" },
+      { tx: 790, ty: 346, iy: 333, anchor: "start" }
+    ];
+    const hierNodes = mkNodes(hierPts, "hf-", function (pt, i) { return hierAnchor[i]; });
+    const hierBuilt = buildStrands(hierPts);
+
+    const out = players.map(function (p, i) {
+      const total = links.reduce(function (s, l) { return s + (l[0] === i ? l[2] : 0); }, 0);
+      return { name: p.name, pct: fmt(total), barWidth: total + "%" };
+    }).sort(function (a, b) { return parseFloat(b.pct) - parseFloat(a.pct); });
+
+    return {
+      ringNodes: ringNodes, ringStrands: ringBuilt.strands, ringLabels: ringBuilt.labels,
+      hierNodes: hierNodes, hierStrands: hierBuilt.strands, hierLabels: hierBuilt.labels,
+      origination: out
+    };
+  }
+}
+</script>
+</body>
+</html>
