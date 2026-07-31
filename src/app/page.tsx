@@ -1,17 +1,16 @@
-import { CreationNetwork } from '@/components/network/CreationNetwork';
-import { SpatialSignature } from '@/components/court/SpatialSignature';
+import { Instrument } from '@/components/Instrument';
 import { GrainResponse } from '@/lib/contracts';
 import { getLineup, getLineupGrain } from '@/lib/api/queries';
-import { biggestConnection } from '@/lib/court/connection';
 import { color } from '@/lib/design/tokens';
 
 /**
- * Stage 1: the Creation Network plate for one lineup, static.
+ * The instrument for one lineup: network as index, court as detail.
  *
- * The top unit (~287 min) is hardcoded here on purpose — grain switching and pickers are
- * Stage 5. Data is read through the same query layer the API routes use, so the page and
- * `GET /api/lineup/[groupId]` cannot diverge, and the payload is validated against the
- * Phase 2 contract before it reaches the component.
+ * A server component — it fetches and validates, then hands a plain `GrainResponse` to the
+ * client component that owns selection. Data is read through the same query layer the API
+ * routes use, so the page and `GET /api/lineup/[groupId]` cannot diverge.
+ *
+ * The top unit (~287 min) is hardcoded on purpose; grain switching and pickers are Stage 5.
  */
 
 const TOP_LINEUP = '-1629008-1629611-1629651-1641730-1642856-';
@@ -38,25 +37,9 @@ export default async function Home() {
     );
   }
 
-  // Stage 2 shows the unit's biggest connection (Claxton → Porter Jr., 26 baskets).
-  // Hardcoded on purpose — making it selectable from the network is Stage 3.
-  const connection = biggestConnection(parsed.data);
-
-  return (
-    <main
-      style={{
-        background: color.shell,
-        minHeight: '100vh',
-        padding: '24px 0 48px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 48,
-      }}
-    >
-      <CreationNetwork data={parsed.data} />
-      {connection && <SpatialSignature connection={connection} />}
-    </main>
-  );
+  // Stage 3: the network is the index and owns selection; the court resolves beside it
+  // when a connection is chosen. Still the hardcoded top lineup — pickers are Stage 5.
+  return <Instrument data={parsed.data} />;
 }
 
 /** Empty/error states give direction, not mood. */

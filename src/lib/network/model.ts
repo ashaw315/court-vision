@@ -42,7 +42,32 @@ export type Strand = {
   marker: 'warm' | 'acid' | null;
 };
 
-export type ArcLabel = { x: number; y: number; text: string; color: string };
+export type ArcLabel = {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  /** Which connection this label belongs to, so it can dim with its arc. */
+  assisterId: number;
+  shooterId: number;
+};
+
+/**
+ * One connection's strands, kept together so the arc can be a single interactive target.
+ *
+ * A bundle is many hairlines but ONE connection — the user clicks the connection, not a
+ * strand. Grouping here (rather than flattening as the design's static export did) is what
+ * lets the plate attach a hit area, focus, and selection to the thing that has meaning.
+ */
+export type StrandBundle = {
+  assisterId: number;
+  shooterId: number;
+  strands: Strand[];
+  /** A single fat invisible path for hit-testing and focus — thin arcs are hard to hit. */
+  hitPath: string;
+  share: number;
+  isHighValue: boolean;
+};
 
 export type Connection = {
   assisterId: number;
@@ -234,7 +259,7 @@ export function buildStrands(
   connections: Connection[],
   nodes: RoleNode[],
   colors: { warm: string; acid: string },
-): { strands: Strand[]; labels: ArcLabel[] } {
+): { strands: Strand[]; bundles: StrandBundle[]; labels: ArcLabel[] } {
   const byId = new Map(nodes.map((node) => [node.personId, node]));
   const { nodeRadius: R, nodeGap: GAP, curvature, weaveSpread } = network;
 
@@ -242,6 +267,7 @@ export function buildStrands(
   const ribbons: Strand[] = [];
   const hot: Strand[] = [];
   const labels: ArcLabel[] = [];
+  const bundles: StrandBundle[] = [];
 
   for (const connection of connections) {
     const from = byId.get(connection.assisterId);
@@ -272,21 +298,37 @@ export function buildStrands(
       : share >= 3 ? 2 : 1;
     const bucket = isHighValue ? hot : dense ? ribbons : beads;
     const mid = (count - 1) / 2;
+    const own: Strand[] = [];
 
     for (let j = 0; j < count; j += 1) {
       const offset = bow + (j - mid) * weaveSpread;
       const qx = mx + dy * offset;
       const qy = my - dx * offset;
       const isCentre = Math.abs(j - mid) < 0.6;
-      bucket.push({
+      const strand: Strand = {
         d: `M${sx.toFixed(1)},${sy.toFixed(1)} Q${qx.toFixed(1)},${qy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`,
         color,
         width: dense ? 0.5 : 1.05,
         dash: dense ? 'none' : '0.1 5.4',
         opacity: dense ? (isHighValue ? 0.8 : 0.58) : isHighValue ? 0.78 : 0.55,
         marker: isCentre ? (isHighValue ? 'acid' : 'warm') : null,
-      });
+      };
+      bucket.push(strand);
+      own.push(strand);
     }
+
+    // The centre line of the bundle, used as the invisible hit/focus target. One fat
+    // path is a far better click target than a dozen half-pixel hairlines.
+    const centreQx = mx + dy * bow;
+    const centreQy = my - dx * bow;
+    bundles.push({
+      assisterId: connection.assisterId,
+      shooterId: connection.shooterId,
+      strands: own,
+      hitPath: `M${sx.toFixed(1)},${sy.toFixed(1)} Q${centreQx.toFixed(1)},${centreQy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`,
+      share,
+      isHighValue,
+    });
 
     // Labels only on the connections worth naming; the rest read as texture.
     if (share >= encoding.labelMinShare) {
@@ -308,11 +350,13 @@ export function buildStrands(
         y: py - dx * side * 13 + 3,
         text: formatShare(Math.round(share * 10) / 10),
         color: isHighValue ? '#7C8C0A' : '#8A3520',
+        assisterId: connection.assisterId,
+        shooterId: connection.shooterId,
       });
     }
   }
 
-  return { strands: [...beads, ...ribbons, ...hot], labels };
+  return { strands: [...beads, ...ribbons, ...hot], bundles, labels };
 }
 
 /** Origination bars: who creates, ordered, as a share of the unit's assisted creation. */

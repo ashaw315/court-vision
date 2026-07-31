@@ -1,3 +1,7 @@
+'use client';
+
+import { useState } from 'react';
+
 import type { GrainResponse } from '@/lib/contracts';
 import { color, encoding, font, network, type } from '@/lib/design/tokens';
 import {
@@ -9,7 +13,16 @@ import {
   buildStrands,
   formatPct,
   type RoleNode,
+  type StrandBundle,
 } from '@/lib/network/model';
+import {
+  DIM_OPACITY,
+  connectionLabel,
+  isDimmed,
+  isNodeDimmed,
+  isSelected,
+  type ConnectionSelection,
+} from '@/lib/network/selection';
 
 /**
  * FIG. 12b — Creation Network, position as role.
@@ -18,8 +31,9 @@ import {
  * real `GrainResponse`. Every element is JSX; d3 appears only as maths (scale/geometry) in
  * `lib/network/model`, never touching the DOM.
  *
- * Static resting state only — no animation, no interaction, no court plate. Those are
- * later stages.
+ * Interactive from Stage 3: each connection is a focusable target that selects itself,
+ * dimming the rest of the field so the emphasised arc ties to the court plate beside it.
+ * Still no animation — Stage 4 owns motion.
  */
 
 const VIEW = network.viewBox;
@@ -42,7 +56,7 @@ function labelAnchor(node: RoleNode): {
     : { tx: node.x - 46, ty: node.y + 4, iy: node.y - 9, anchor: 'end' };
 }
 
-function NodeMark({ node }: { node: RoleNode }) {
+function NodeMark({ node, dimmed }: { node: RoleNode; dimmed: boolean }) {
   const R = network.nodeRadius;
   const anchor = labelAnchor(node);
   const clipId = `fill-${node.personId}`;
@@ -54,7 +68,7 @@ function NodeMark({ node }: { node: RoleNode }) {
   const fillTop = node.y + R - 2 * R * split;
 
   return (
-    <g>
+    <g opacity={dimmed ? DIM_OPACITY : 1}>
       <defs>
         <clipPath id={clipId}>
           <rect x={node.x - R} y={fillTop} width={2 * R} height={2 * R} />
@@ -138,13 +152,143 @@ function NodeMark({ node }: { node: RoleNode }) {
   );
 }
 
-export function CreationNetwork({ data }: { data: GrainResponse }) {
+/**
+ * One connection, as an interactive target.
+ *
+ * The visible marks are hairlines — far too thin to click reliably — so a single fat
+ * invisible path sits behind them carrying the pointer and focus. That path is the
+ * button; the strands are its appearance.
+ *
+ * Rendered as a real focusable element with a role and keyboard handling rather than a
+ * click-only `<path>`, so keyboard users are not locked out and Stage 6 has nothing to
+ * retrofit.
+ */
+function ConnectionArc({
+  bundle,
+  selected,
+  dimmed,
+  interactive,
+  label,
+  onActivate,
+}: {
+  bundle: StrandBundle;
+  selected: boolean;
+  dimmed: boolean;
+  interactive: boolean;
+  label: string;
+  onActivate?: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+
+  // Hover and keyboard focus both lift a connection out of the field so it reads as
+  // clickable. Dimmed arcs stay visible as context — the unit's shape is still the point.
+  const active = hovered || focused;
+  const groupOpacity = dimmed ? (active ? DIM_OPACITY * 2.4 : DIM_OPACITY) : 1;
+  const emphasis = selected || (active && !dimmed);
+
+  return (
+    <g
+      opacity={groupOpacity}
+      style={{ cursor: interactive ? 'pointer' : undefined }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {bundle.strands.map((strand, i) => (
+        <path
+          key={i}
+          d={strand.d}
+          fill="none"
+          stroke={strand.color}
+          strokeWidth={emphasis ? strand.width * 1.9 : strand.width}
+          strokeDasharray={strand.dash}
+          strokeLinecap="round"
+          opacity={emphasis ? Math.min(1, strand.opacity * 1.5) : strand.opacity}
+          markerEnd={strand.marker ? `url(#ah-${strand.marker})` : undefined}
+        />
+      ))}
+
+      {interactive && (
+        <path
+          d={bundle.hitPath}
+          fill="none"
+          // Invisible, but a comfortable target. `stroke` must be set (not `none`) for
+          // pointer events to register along the path.
+          stroke="transparent"
+          strokeWidth={22}
+          strokeLinecap="round"
+          role="button"
+          tabIndex={0}
+          aria-pressed={selected}
+          aria-label={label}
+          onClick={onActivate}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              // Space would scroll the page otherwise.
+              event.preventDefault();
+              onActivate?.();
+            }
+          }}
+          style={{ cursor: 'pointer', outline: 'none' }}
+        />
+      )}
+
+      {/* Selected marker — a dashed rail along the connection, so which arc is selected
+          stays obvious even when the court beside it is scrolled out of view. */}
+      {selected && (
+        <path
+          d={bundle.hitPath}
+          fill="none"
+          stroke={bundle.isHighValue ? color.acidDeep : color.rustDeep}
+          strokeWidth={0.7}
+          strokeDasharray="2 3"
+          strokeLinecap="round"
+          opacity={0.55}
+          pointerEvents="none"
+        />
+      )}
+
+      {/* Focus ring, drawn rather than left to the UA outline — a browser outline on an
+          SVG path renders as a useless bounding box. Keyboard users need to see where
+          they are before they commit to activating. */}
+      {focused && (
+        <path
+          d={bundle.hitPath}
+          fill="none"
+          stroke={color.ink}
+          strokeWidth={2.4}
+          strokeLinecap="round"
+          opacity={0.5}
+          pointerEvents="none"
+        />
+      )}
+    </g>
+  );
+}
+
+export type CreationNetworkProps = {
+  data: GrainResponse;
+  /** The connection currently selected, or null at rest. */
+  selection?: ConnectionSelection | null;
+  /** Called when a connection is activated by click or keyboard. */
+  onSelectConnection?: (selection: ConnectionSelection) => void;
+};
+
+export function CreationNetwork({
+  data,
+  selection = null,
+  onSelectConnection,
+}: CreationNetworkProps) {
   const nodes = buildRoleNodes(data);
   const connections = buildConnections(data.edges);
-  const { strands, labels } = buildStrands(connections, nodes, {
+  const { bundles, labels } = buildStrands(connections, nodes, {
     warm: color.rust,
     acid: color.acid,
   });
+  const nameById = new Map(data.players.map((player) => [player.personId, player.displayName]));
+  const interactive = typeof onSelectConnection === 'function';
   const origination = buildOrigination(nodes);
   const reading = buildReading(connections, nodes);
 
@@ -345,21 +489,34 @@ export function CreationNetwork({ data }: { data: GrainResponse }) {
             </text>
           </g>
 
-          {/* woven strand bundles — density encodes share */}
+          {/* woven strand bundles — density encodes share; each bundle is one target */}
           <g>
-            {strands.map((strand, i) => (
-              <path
-                key={i}
-                d={strand.d}
-                fill="none"
-                stroke={strand.color}
-                strokeWidth={strand.width}
-                strokeDasharray={strand.dash}
-                strokeLinecap="round"
-                opacity={strand.opacity}
-                markerEnd={strand.marker ? `url(#ah-${strand.marker})` : undefined}
-              />
-            ))}
+            {bundles.map((bundle) => {
+              const selected = isSelected(selection, bundle);
+              const dimmed = isDimmed(selection, bundle);
+              const assister = nameById.get(bundle.assisterId) ?? String(bundle.assisterId);
+              const shooter = nameById.get(bundle.shooterId) ?? String(bundle.shooterId);
+
+              return (
+                <ConnectionArc
+                  key={`${bundle.assisterId}-${bundle.shooterId}`}
+                  bundle={bundle}
+                  selected={selected}
+                  dimmed={dimmed}
+                  interactive={interactive}
+                  label={connectionLabel(assister, shooter, bundle.share, selected)}
+                  onActivate={
+                    onSelectConnection
+                      ? () =>
+                        onSelectConnection({
+                          assisterId: bundle.assisterId,
+                          shooterId: bundle.shooterId,
+                        })
+                      : undefined
+                  }
+                />
+              );
+            })}
           </g>
 
           {/* % labels, only on connections >= 7% */}
@@ -371,6 +528,9 @@ export function CreationNetwork({ data }: { data: GrainResponse }) {
                 y={label.y}
                 textAnchor="middle"
                 fill={label.color}
+                // A label recedes with its own arc; leaving it bright would let the
+                // dimmed field keep competing with the selected connection.
+                opacity={isDimmed(selection, label) ? DIM_OPACITY : 1}
                 style={{
                   fontFamily: font.mono,
                   fontSize: type.arcLabel.size,
@@ -384,7 +544,11 @@ export function CreationNetwork({ data }: { data: GrainResponse }) {
 
           <g>
             {nodes.map((node) => (
-              <NodeMark key={node.personId} node={node} />
+              <NodeMark
+                key={node.personId}
+                node={node}
+                dimmed={isNodeDimmed(selection, node.personId)}
+              />
             ))}
           </g>
         </svg>
