@@ -1,30 +1,22 @@
-import { Instrument } from '@/components/Instrument';
+import { CourtVision } from '@/components/CourtVision';
 import { GrainResponse } from '@/lib/contracts';
-import { getLineup, getLineupGrain, getSeasonScope } from '@/lib/api/queries';
+import { getSeasonScope, getTeamGrain } from '@/lib/api/queries';
 import { color } from '@/lib/design/tokens';
 
 /**
- * The instrument for one lineup: network as index, court as detail.
+ * The instrument, landing on the team scope.
  *
- * A server component — it fetches and validates, then hands a plain `GrainResponse` to the
- * client component that owns selection. Data is read through the same query layer the API
- * routes use, so the page and `GET /api/lineup/[groupId]` cannot diverge.
- *
- * The top unit (~287 min) is hardcoded on purpose; grain switching and pickers are Stage 5.
+ * A server component — it fetches and validates the broadest scope, then hands a plain
+ * `GrainResponse` to the client component that owns grain, selection and fetching. Data is
+ * read through the same query layer the API routes use, so the page and `GET /api/team`
+ * cannot diverge, and the landing view costs no client round-trip.
  */
-
-const TOP_LINEUP = '-1629008-1629611-1629651-1641730-1642856-';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const lineup = await getLineup(TOP_LINEUP);
-  if (!lineup) {
-    return <Notice title="Lineup not found" detail={`No stored unit for ${TOP_LINEUP}.`} />;
-  }
-
   const [payload, scope] = await Promise.all([
-    getLineupGrain(lineup),
+    getTeamGrain(),
     // The validated game count every figure is summed over — read from the data.
     getSeasonScope(),
   ]);
@@ -36,14 +28,12 @@ export default async function Home() {
     return (
       <Notice
         title="Data failed contract validation"
-        detail="The lineup payload did not match the Phase 2 contract. See the server log."
+        detail="The team payload did not match the Phase 2 contract. See the server log."
       />
     );
   }
 
-  // Stage 3: the network is the index and owns selection; the court resolves beside it
-  // when a connection is chosen. Still the hardcoded top lineup — pickers are Stage 5.
-  return <Instrument data={parsed.data} scope={scope} />;
+  return <CourtVision initialData={parsed.data} scope={scope} />;
 }
 
 /** Empty/error states give direction, not mood. */

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import type { GrainResponse } from '@/lib/contracts';
+import type { Grain, GrainResponse } from '@/lib/contracts';
 import { color, encoding, font, network, type } from '@/lib/design/tokens';
 import {
   ACID_THRESHOLD_PPB,
@@ -54,6 +54,18 @@ const VIEW = network.viewBox;
  * mask sweeps fully open regardless of the connection's length.
  */
 const REVEAL_LENGTH = 1600;
+
+/**
+ * What the plate is a picture of, per scope.
+ *
+ * Hardcoding "FIVE-MAN UNIT" was true while the tool only drew lineups; at team and player
+ * grain it captions the wrong subject on an otherwise correct plate.
+ */
+const SUBJECT: Record<Grain, string> = {
+  team: 'FULL ROSTER',
+  lineup: 'FIVE-MAN UNIT',
+  player: 'ONE PLAYER',
+};
 
 /** Node label placement: the design pushes labels away from the plate's centre column. */
 function labelAnchor(node: RoleNode): {
@@ -347,6 +359,8 @@ export type CreationNetworkProps = {
   onSelectConnection?: (selection: ConnectionSelection) => void;
   /** The time scope every figure on this plate is summed over. */
   scope?: SeasonScope | null;
+  /** What the plate dropped to stay legible, if anything — stated, never implied. */
+  densityNote?: string | null;
   /**
    * Play the draw-in. When false the plate renders its final static composition
    * immediately — which is what `prefers-reduced-motion` gets, and what the server
@@ -360,6 +374,7 @@ export function CreationNetwork({
   selection = null,
   onSelectConnection,
   scope = null,
+  densityNote = null,
   animate = false,
 }: CreationNetworkProps) {
   const nodes = buildRoleNodes(data);
@@ -436,7 +451,7 @@ export function CreationNetwork({
           ...monoLabel(type.header.size, type.header.letterSpacing, color.muted),
         }}
       >
-        <span>FIG. 12b — CREATION NETWORK · FIVE-MAN UNIT · POSITION AS ROLE</span>
+        <span>FIG. 12b — CREATION NETWORK · {SUBJECT[data.scope.grain]} · POSITION AS ROLE</span>
         <span style={{ whiteSpace: 'nowrap' }}>N.º 0034 · 05 · CVN · MMXXVI</span>
       </div>
 
@@ -484,7 +499,13 @@ export function CreationNetwork({
         >
           VERTICAL AXIS · CREATION ORIGINATED
           <br />
-          ARCS SUM TO 100% OF ASSISTED CREATION
+          {/*
+            Shares are computed over the arcs actually drawn, so on a thinned plate they
+            sum to 100% OF THOSE ARCS — not of the team's whole season. Saying "100% of
+            assisted creation" there would contradict the density note directly below,
+            which reports the real share of the season these arcs carry.
+          */}
+          ARCS SUM TO 100% OF {densityNote ? 'CREATION SHOWN' : 'ASSISTED CREATION'}
           {scope && (
             <>
               <br />
@@ -510,11 +531,13 @@ export function CreationNetwork({
           ...monoLabel(type.headerNote.size, type.headerNote.letterSpacing, color.mutedLight),
         }}
       >
-        <span>§A / RESTING STATE · ALL CONNECTIONS SHOWN</span>
+        <span>§A / RESTING STATE{densityNote ? '' : ' · ALL CONNECTIONS SHOWN'}</span>
         <span style={{ color: color.rustDeep }}>
           TOP CONNECTION {formatPct(topShare / 100, topShare % 1 === 0 ? 0 : 1)} · {character}
         </span>
         <span>{data.scope.label.toUpperCase()}</span>
+        {/* A thinned plate must say so on its face, not only in a tooltip. */}
+        {densityNote && <span style={{ color: color.muted }}>{densityNote}</span>}
       </div>
 
       {/* ── the network ─────────────────────────────────────────────── */}

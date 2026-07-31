@@ -172,7 +172,35 @@ export function playerSplits(
 }
 
 /**
- * Place the five players in role-space.
+ * Horizontal columns for N nodes, alternating outward from the plate's centre.
+ *
+ * Wider scopes need more lanes, so the span grows with the node count until it reaches the
+ * plate's usable width. Adjacent ROLE ranks land in non-adjacent columns, which is what
+ * stops bundles between similarly-ranked players from stacking on top of each other.
+ */
+export function roleColumns(count: number): number[] {
+  const mid = network.viewBox.width / 2;
+  if (count <= 1) return [mid];
+
+  // The five-node case is the resolved design's own spacing and is preserved exactly —
+  // the lineup grain is the plate as drawn, and generalising must not quietly restyle it.
+  if (count <= 5) {
+    return [mid, mid - 250, mid + 250, mid - 430, mid + 430].slice(0, count);
+  }
+
+  // Wider scopes fan out to the plate's usable width, leaving a gutter for node labels.
+  const half = network.viewBox.width / 2 - 90;
+  const lanes: number[] = [mid];
+  const perSide = Math.ceil((count - 1) / 2);
+  for (let i = 1; i <= perSide; i += 1) {
+    const offset = (half * i) / perSide;
+    lanes.push(mid - offset, mid + offset);
+  }
+  return lanes.slice(0, count);
+}
+
+/**
+ * Place the players in role-space.
  *
  * Vertical axis is creation ORIGINATED versus RECEIVED — the design's whole premise
  * ("creators above, scorers below"). A player who originates more than they receive rises
@@ -227,16 +255,17 @@ export function buildRoleNodes(response: GrainResponse): RoleNode[] {
   // in the same column and the bundles between them have room to read. Legibility only —
   // x carries no meaning, which is why only the vertical axis is labelled.
   //
-  // The columns alternate centre → left → right → far-left → far-right, matching the
-  // design's own spread, and are laid out symmetrically about the viewBox centre so the
-  // plate does not drift to one side.
+  // Columns alternate outward from the centre (centre → left → right → far-left → …),
+  // matching the design's own spread and staying symmetric so the plate never drifts to
+  // one side. GENERATED rather than hardcoded: the five-element list this replaced worked
+  // only for a five-man lineup, and returned `undefined` — an unpositioned node — as soon
+  // as the team grain arrived with more players than columns.
   const byRole = [...players].sort((a, b) => b.roleBalance - a.roleBalance);
-  const mid = network.viewBox.width / 2;
-  const columns = [mid, mid - 250, mid + 250, mid - 430, mid + 430];
+  const columns = roleColumns(players.length);
 
   const ranked = [...players].sort((a, b) => b.originatedShare - a.originatedShare);
 
-  return players.map((player) => {
+  const placed = players.map((player) => {
     const roleRank = byRole.findIndex((p) => p.personId === player.personId);
     const originRank = ranked.findIndex((p) => p.personId === player.personId);
     return {
@@ -246,6 +275,90 @@ export function buildRoleNodes(response: GrainResponse): RoleNode[] {
       index: String(originRank + 1).padStart(2, '0'),
     };
   });
+
+  return separateLabels(placed);
+}
+
+/**
+ * Push apart nodes whose LABELS would overprint.
+ *
+ * `y` is driven entirely by role balance, which is the right encoding — but in a player
+ * scope most teammates are pure receivers with near-identical balances, so they collapse
+ * into one horizontal band and their name/readout blocks land on top of each other
+ * ("WOLF" over "TRAORE", "SHARPE" over "CLOWNEY"). Observed on the real Porter Jr. plate.
+ *
+ * This nudges only nodes that actually collide, and only vertically, so the role encoding
+ * survives: a node never crosses another in role order, it just gets breathing room. Nodes
+ * far enough apart horizontally are left exactly where the scale put them, which is why a
+ * five-man lineup — the resolved design — comes through untouched.
+ */
+function separateLabels<T extends { x: number; y: number }>(nodes: T[]): T[] {
+  // A label block is roughly this tall (index + name + readout), and only nodes sharing
+  // horizontal space can overprint at all.
+  //
+  // X_OVERLAP is deliberately narrower than a label is wide. Labels sit on alternating
+  // sides of their node (see `labelAnchor`), so two nodes a lane apart put their text in
+  // opposite directions and clear each other. Treating every lane-neighbour as a collision
+  // demanded 14 nodes in a column that fits 13 — an unsatisfiable constraint that just
+  // pinned everything to the bottom rule.
+  const MIN_GAP_Y = 34;
+  const X_OVERLAP = 96;
+  const top = network.originatesY + 20;
+  const bottom = network.receivesY - 22;
+
+  const adjusted = nodes.map((node) => ({ ...node }));
+
+  // Sweeping once is not enough: pushing a node clear of one neighbour can shove it into
+  // the next. Repeat until a full pass moves nothing, bounded so it always terminates.
+  //
+  // Every pass re-sorts by the CURRENT y. Ordering once up front and reusing it was a bug:
+  // after a node is nudged the original order is stale, so a pair that has swapped places
+  // is never re-compared and stays overlapping.
+  //
+  // This is a local relaxation, not a global solver: it resolves pairs, and a long chain of
+  // nodes each already 34px apart can wedge one node into a 50px slot with nowhere to go.
+  // Left deliberately simple, because that wedge needs every node at an identical role
+  // balance — verified absent from every real scope (the team plate and all 22 player
+  // plates come out with zero overlapping labels). A full constraint solver here would be
+  // machinery for a case the data does not produce.
+  const MAX_PASSES = 24;
+  for (let pass = 0; pass < MAX_PASSES; pass += 1) {
+    let moved = false;
+
+    const order = adjusted
+      .map((node, index) => ({ index, y: node.y, x: node.x }))
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+
+    for (let i = 1; i < order.length; i += 1) {
+      const current = adjusted[order[i].index]!;
+      for (let j = 0; j < i; j += 1) {
+        const earlier = adjusted[order[j].index]!;
+        if (Math.abs(current.x - earlier.x) >= X_OVERLAP) continue;
+        const gap = current.y - earlier.y;
+        if (gap >= MIN_GAP_Y) continue;
+
+        // Prefer pushing the lower node down; if it is already against the bottom rule,
+        // lift the upper one instead. Without that fallback a pair can stay welded
+        // together at the floor, which is exactly where crowded scopes pile up.
+        const pushed = Math.min(earlier.y + MIN_GAP_Y, bottom);
+        if (pushed > current.y + 1e-9) {
+          current.y = pushed;
+          moved = true;
+          continue;
+        }
+
+        const lifted = Math.max(current.y - MIN_GAP_Y, top);
+        if (lifted < earlier.y - 1e-9) {
+          earlier.y = lifted;
+          moved = true;
+        }
+      }
+    }
+
+    if (!moved) break;
+  }
+
+  return adjusted;
 }
 
 /**

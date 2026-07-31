@@ -33,11 +33,30 @@ import {
 export function Instrument({
   data,
   scope = null,
+  densityNote = null,
 }: {
   data: GrainResponse;
   scope?: SeasonScope | null;
+  /** What the plate had to drop to stay legible, if anything. Team grain only. */
+  densityNote?: string | null;
 }) {
   const [selection, setSelection] = useState<ConnectionSelection | null>(null);
+
+  /**
+   * A new scope means the old selection is meaningless — that connection may not exist in
+   * the new data. Clearing on scope change keeps the court from showing a connection the
+   * network no longer draws.
+   *
+   * Done by storing the scope alongside the selection and adjusting during render (React's
+   * documented pattern for derived state) rather than in an effect — an effect would
+   * render one frame of the new plate with the old connection still lit.
+   */
+  const scopeKey = `${data.scope.grain}:${data.scope.id ?? 'team'}`;
+  const [lastScope, setLastScope] = useState(scopeKey);
+  if (lastScope !== scopeKey) {
+    setLastScope(scopeKey);
+    setSelection(null);
+  }
 
   // Non-negotiable: a reader who asked for reduced motion gets the settled plates with no
   // draw-in and no bloom. This also governs the server render, where the hook reports
@@ -129,6 +148,7 @@ export function Instrument({
             onSelectConnection={handleSelect}
             scope={scope}
             animate={animate}
+            densityNote={densityNote}
           />
         </div>
 
