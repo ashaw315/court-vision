@@ -1,8 +1,61 @@
-/* Reset only. The token system (color, type, layout) is defined in Phase 6 —
-   nothing here should pre-empt that. */
+/* Reset only. The token system (color, type, layout) lives in src/lib/design/tokens.ts —
+   nothing here should pre-empt it. */
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* ── the "play" ────────────────────────────────────────────────────────────────
+   Two keyframes, both tied to an action (load / connection select). Nothing here
+   loops or runs at idle.
+
+   Only `stroke-dashoffset`, `opacity` and `transform` are animated — all compositor-
+   or paint-level, so no layout is recalculated per frame. */
+
+@keyframes cv-draw {
+  from {
+    stroke-dashoffset: 1000;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes cv-node {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes cv-bloom {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Reduced motion is handled in React — the components render their settled state and
+   never emit an animation at all. This block is defence in depth: if any animated
+   style ever slips through, it resolves instantly to the final frame rather than
+   moving. `both` fill-mode means the end state still applies. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

@@ -6,6 +6,9 @@ import { SpatialSignature } from '@/components/court/SpatialSignature';
 import { CreationNetwork } from '@/components/network/CreationNetwork';
 import type { GrainResponse } from '@/lib/contracts';
 import { selectConnection } from '@/lib/court/connection';
+import type { SeasonScope } from '@/lib/data/scope';
+import { playKey } from '@/lib/motion/play';
+import { useReducedMotion } from '@/lib/motion/useReducedMotion';
 import { color, font, type } from '@/lib/design/tokens';
 import {
   toggleSelection,
@@ -23,10 +26,28 @@ import {
  * Selecting a connection resolves the court beside it, because reading structure and space
  * together is the whole point of the pairing.
  *
- * No motion here — Stage 4 owns that. Selection simply reflows.
+ * Also owns the motion policy: whether the play runs at all (reduced motion), and the key
+ * that decides WHEN it re-runs. Both plates animate only on load, lineup change and
+ * connection select — never on an incidental re-render.
  */
-export function Instrument({ data }: { data: GrainResponse }) {
+export function Instrument({
+  data,
+  scope = null,
+}: {
+  data: GrainResponse;
+  scope?: SeasonScope | null;
+}) {
   const [selection, setSelection] = useState<ConnectionSelection | null>(null);
+
+  // Non-negotiable: a reader who asked for reduced motion gets the settled plates with no
+  // draw-in and no bloom. This also governs the server render, where the hook reports
+  // `true` and the first paint is therefore static.
+  const reducedMotion = useReducedMotion();
+  const animate = !reducedMotion;
+
+  // The play restarts only when this changes — a new lineup or a new selection. Hover,
+  // focus and other re-renders produce the same key and no replay.
+  const key = playKey(data.scope.id, selection);
 
   const connection = selection
     ? selectConnection(data, selection.assisterId, selection.shooterId)
@@ -71,15 +92,28 @@ export function Instrument({ data }: { data: GrainResponse }) {
       >
         <div style={{ flex: connection ? '1 1 640px' : '1 1 100%', minWidth: 0 }}>
           <CreationNetwork
+            // Keyed on the LINEUP only, not the selection: selecting a connection must
+            // dim the field, not replay the whole draw-in. A lineup change (Stage 5)
+            // remounts and re-runs the play, which is exactly when it should.
+            key={`network:${data.scope.id ?? 'team'}`}
             data={data}
             selection={selection}
             onSelectConnection={handleSelect}
+            scope={scope}
+            animate={animate}
           />
         </div>
 
         {connection && (
           <div style={{ flex: '1 1 560px', minWidth: 0 }}>
-            <SpatialSignature connection={connection} />
+            <SpatialSignature
+              // Remounting on selection change restarts the bloom for the new shot set;
+              // without it React would reuse the settled marks and nothing would animate.
+              key={key}
+              connection={connection}
+              scope={scope}
+              animate={animate}
+            />
           </div>
         )}
       </div>

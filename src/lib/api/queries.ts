@@ -1,13 +1,14 @@
 import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
-import { assistEdges, lineups, players, shotEvents } from '@/db/schema';
+import { assistEdges, games, lineups, players, shotEvents } from '@/db/schema';
 import type {
   AssistedSplit,
   GrainResponse,
   LineupSummary,
   ShotEvent,
 } from '@/lib/contracts';
+import { seasonScope, type SeasonScope } from '@/lib/data/scope';
 
 /**
  * Query + shaping for the three grains.
@@ -360,4 +361,18 @@ export async function getPlayers() {
     displayName: row.displayName,
     shotCount: Number(row.shotCount),
   }));
+}
+
+/**
+ * The dataset's season scope — the validated game count every total is summed over.
+ *
+ * Read from `games` rather than from a grain's `meta.games`: the latter counts the games
+ * the CURRENT SCOPE appears in (18 for the top lineup), while the plates' totals cover
+ * the whole validated season (72). Stating the former as the season scope would claim the
+ * numbers cover fewer games than they do.
+ */
+export async function getSeasonScope(): Promise<SeasonScope> {
+  const db = getDb();
+  const rows = await db.select({ n: sql<number>`count(*)::int` }).from(games);
+  return seasonScope(Number(rows[0]?.n ?? 0));
 }

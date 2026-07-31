@@ -10,6 +10,9 @@ import {
   threePointArcPath,
 } from '@/lib/court/geometry';
 import { buildSpatialReading, type ConnectionShots } from '@/lib/court/connection';
+import type { SeasonScope } from '@/lib/data/scope';
+import { formatScope } from '@/lib/data/scope';
+import { SHOT_BLOOM_MS, shotBloomDelay } from '@/lib/motion/play';
 import { formatShare } from '@/lib/network/model';
 
 /**
@@ -19,7 +22,8 @@ import { formatShare } from '@/lib/network/model';
  * vocabulary, so the two read as a matched pair — the network says WHO creates for whom,
  * this says WHERE that creation scores.
  *
- * Static, one hardcoded connection. Linking it to the network is Stage 3.
+ * Fed by the network's selection (Stage 3). Stage 4 adds the bloom as a transition layer:
+ * with `animate={false}` (or reduced motion) this renders exactly the Stage 2 static court.
  */
 
 /** Court furniture, drawn as a delicate plate rather than a realistic floor. */
@@ -101,12 +105,28 @@ function CourtLines() {
  * ring — the same green the network uses for high-value connections, so the two plates
  * share one meaning for the colour.
  */
-function ShotMark({ shot }: { shot: ShotEvent }) {
+function ShotMark({
+  shot,
+  bloomDelay,
+}: {
+  shot: ShotEvent;
+  /** ms delay for the bloom, or null to render settled. */
+  bloomDelay: number | null;
+}) {
   const point = shotToCourt(shot.locX, shot.locY);
+  const bloom =
+    bloomDelay === null
+      ? undefined
+      : {
+        animation: `cv-bloom ${SHOT_BLOOM_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1) ${bloomDelay}ms both`,
+        // Scale about the mark itself, so a basket grows in place rather than
+        // sliding in from the court's origin.
+        transformOrigin: `${point.x}px ${point.y}px`,
+      };
 
   if (shot.shotValue === 3) {
     return (
-      <g>
+      <g style={bloom}>
         <circle cx={point.x} cy={point.y} r={5.4} fill={color.acid} opacity={0.92} />
         <circle
           cx={point.x}
@@ -122,7 +142,7 @@ function ShotMark({ shot }: { shot: ShotEvent }) {
   }
 
   return (
-    <g>
+    <g style={bloom}>
       <circle
         cx={point.x}
         cy={point.y}
@@ -137,7 +157,19 @@ function ShotMark({ shot }: { shot: ShotEvent }) {
   );
 }
 
-export function SpatialSignature({ connection }: { connection: ConnectionShots }) {
+export type SpatialSignatureProps = {
+  connection: ConnectionShots;
+  /** The time scope every figure on this plate is summed over. */
+  scope?: SeasonScope | null;
+  /** Play the bloom. False renders the settled Stage 2 court immediately. */
+  animate?: boolean;
+};
+
+export function SpatialSignature({
+  connection,
+  scope = null,
+  animate = false,
+}: SpatialSignatureProps) {
   const { tally } = connection;
   const reading = buildSpatialReading(connection);
 
@@ -244,6 +276,14 @@ export function SpatialSignature({ connection }: { connection: ConnectionShots }
         }}
       >
         {caption}
+        {scope && (
+          <>
+            {' · '}
+            {/* The basket and point counts above are season totals; without this a
+                reader cannot tell them from a single game's. */}
+            <span style={{ color: color.muted }}>{formatScope(scope).toUpperCase()}</span>
+          </>
+        )}
       </div>
 
       {/* ── court + side panel ──────────────────────────────────────── */}
@@ -269,8 +309,12 @@ export function SpatialSignature({ connection }: { connection: ConnectionShots }
             <CourtLines />
 
             <g>
-              {visible.map((shot) => (
-                <ShotMark key={`${shot.gameId}-${shot.eventId}`} shot={shot} />
+              {visible.map((shot, index) => (
+                <ShotMark
+                  key={`${shot.gameId}-${shot.eventId}`}
+                  shot={shot}
+                  bloomDelay={animate ? shotBloomDelay(index, visible.length) : null}
+                />
               ))}
             </g>
 

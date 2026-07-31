@@ -1,6 +1,6 @@
 import { Instrument } from '@/components/Instrument';
 import { GrainResponse } from '@/lib/contracts';
-import { getLineup, getLineupGrain } from '@/lib/api/queries';
+import { getLineup, getLineupGrain, getSeasonScope } from '@/lib/api/queries';
 import { color } from '@/lib/design/tokens';
 
 /**
@@ -23,7 +23,11 @@ export default async function Home() {
     return <Notice title="Lineup not found" detail={`No stored unit for ${TOP_LINEUP}.`} />;
   }
 
-  const payload = await getLineupGrain(lineup);
+  const [payload, scope] = await Promise.all([
+    getLineupGrain(lineup),
+    // The validated game count every figure is summed over — read from the data.
+    getSeasonScope(),
+  ]);
 
   // Validated here too: the component types itself against the contract, so a payload
   // that does not satisfy it is a bug worth surfacing rather than rendering around.
@@ -39,7 +43,7 @@ export default async function Home() {
 
   // Stage 3: the network is the index and owns selection; the court resolves beside it
   // when a connection is chosen. Still the hardcoded top lineup — pickers are Stage 5.
-  return <Instrument data={parsed.data} />;
+  return <Instrument data={parsed.data} scope={scope} />;
 }
 
 /** Empty/error states give direction, not mood. */

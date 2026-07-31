@@ -15,6 +15,14 @@ import {
   type RoleNode,
   type StrandBundle,
 } from '@/lib/network/model';
+import type { SeasonScope } from '@/lib/data/scope';
+import { formatScope } from '@/lib/data/scope';
+import {
+  arcSequence,
+  nodeSettleMs,
+  NODE_FADE_MS,
+  NODE_STAGGER_MS,
+} from '@/lib/motion/play';
 import {
   DIM_OPACITY,
   connectionLabel,
@@ -33,7 +41,10 @@ import {
  *
  * Interactive from Stage 3: each connection is a focusable target that selects itself,
  * dimming the rest of the field so the emphasised arc ties to the court plate beside it.
- * Still no animation — Stage 4 owns motion.
+ *
+ * Stage 4 adds the draw-in as a TRANSITION layer: arcs grow along their paths in
+ * volume-order after the nodes land. The settled composition is unchanged — with
+ * `animate={false}` (or reduced motion) this renders exactly the Stage 1 plate.
  */
 
 const VIEW = network.viewBox;
@@ -56,7 +67,16 @@ function labelAnchor(node: RoleNode): {
     : { tx: node.x - 46, ty: node.y + 4, iy: node.y - 9, anchor: 'end' };
 }
 
-function NodeMark({ node, dimmed }: { node: RoleNode; dimmed: boolean }) {
+function NodeMark({
+  node,
+  dimmed,
+  fadeDelay,
+}: {
+  node: RoleNode;
+  dimmed: boolean;
+  /** ms delay for the land-in, or null to render settled. */
+  fadeDelay: number | null;
+}) {
   const R = network.nodeRadius;
   const anchor = labelAnchor(node);
   const clipId = `fill-${node.personId}`;
@@ -68,7 +88,17 @@ function NodeMark({ node, dimmed }: { node: RoleNode; dimmed: boolean }) {
   const fillTop = node.y + R - 2 * R * split;
 
   return (
-    <g opacity={dimmed ? DIM_OPACITY : 1}>
+    <g
+      opacity={dimmed ? DIM_OPACITY : 1}
+      style={
+        fadeDelay === null
+          ? undefined
+          : {
+            animation: `cv-node ${NODE_FADE_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1) ${fadeDelay}ms both`,
+            transformOrigin: `${node.x}px ${node.y}px`,
+          }
+      }
+    >
       <defs>
         <clipPath id={clipId}>
           <rect x={node.x - R} y={fillTop} width={2 * R} height={2 * R} />
@@ -170,6 +200,7 @@ function ConnectionArc({
   interactive,
   label,
   onActivate,
+  draw,
 }: {
   bundle: StrandBundle;
   selected: boolean;
@@ -177,6 +208,8 @@ function ConnectionArc({
   interactive: boolean;
   label: string;
   onActivate?: () => void;
+  /** Draw-in timing, or null to render the finished arc immediately. */
+  draw: { delay: number; duration: number } | null;
 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -201,10 +234,21 @@ function ConnectionArc({
           fill="none"
           stroke={strand.color}
           strokeWidth={emphasis ? strand.width * 1.9 : strand.width}
-          strokeDasharray={strand.dash}
+          // While drawing, the hairline grows along its own path via dashoffset. The
+          // resting dash pattern (beads) is suspended for the draw and restored at the
+          // end, so the settled composition is byte-identical to the static plate.
+          strokeDasharray={draw ? '1000' : strand.dash}
+          strokeDashoffset={draw ? 1000 : undefined}
           strokeLinecap="round"
           opacity={emphasis ? Math.min(1, strand.opacity * 1.5) : strand.opacity}
           markerEnd={strand.marker ? `url(#ah-${strand.marker})` : undefined}
+          style={
+            draw
+              ? {
+                animation: `cv-draw ${draw.duration}ms cubic-bezier(0.22, 0.61, 0.36, 1) ${draw.delay}ms both`,
+              }
+              : undefined
+          }
         />
       ))}
 
@@ -274,12 +318,22 @@ export type CreationNetworkProps = {
   selection?: ConnectionSelection | null;
   /** Called when a connection is activated by click or keyboard. */
   onSelectConnection?: (selection: ConnectionSelection) => void;
+  /** The time scope every figure on this plate is summed over. */
+  scope?: SeasonScope | null;
+  /**
+   * Play the draw-in. When false the plate renders its final static composition
+   * immediately — which is what `prefers-reduced-motion` gets, and what the server
+   * renders.
+   */
+  animate?: boolean;
 };
 
 export function CreationNetwork({
   data,
   selection = null,
   onSelectConnection,
+  scope = null,
+  animate = false,
 }: CreationNetworkProps) {
   const nodes = buildRoleNodes(data);
   const connections = buildConnections(data.edges);
@@ -291,6 +345,33 @@ export function CreationNetwork({
   const interactive = typeof onSelectConnection === 'function';
   const origination = buildOrigination(nodes);
   const reading = buildReading(connections, nodes);
+
+  /**
+   * The play is a pure render-time decision, not a state machine.
+   *
+   * `animate` is false for reduced motion and on the server, so those render the settled
+   * plate directly. When true, the CSS animations run once and finish on their own — no
+   * timer, no setState, nothing to unwind. React re-rendering for hover or focus does not
+   * restart them, because a CSS animation only replays if the element remounts, and the
+   * `playKey` on this subtree is what controls that.
+   */
+  // Nodes land top-down (creators first), matching how the plate is read.
+  // Not manually memoized: these are cheap Map builds over arrays this render already
+  // computed, and the React Compiler memoizes the component for us.
+  const nodeIndex = new Map(
+    [...nodes]
+      .sort((a, b) => a.y - b.y)
+      .map((node, i) => [node.personId, i * NODE_STAGGER_MS] as const),
+  );
+
+  const settle = nodeSettleMs(nodes.length);
+  const arcTimings = new Map(
+    arcSequence(connections, settle).map(
+      (timing) => [`${timing.assisterId}-${timing.shooterId}`, timing] as const,
+    ),
+  );
+
+  const playing = animate;
 
   const topShare = connections[0]?.share ?? 0;
   const topThree = connections.slice(0, 3).reduce((sum, c) => sum + c.share, 0);
@@ -377,6 +458,16 @@ export function CreationNetwork({
           VERTICAL AXIS · CREATION ORIGINATED
           <br />
           ARCS SUM TO 100% OF ASSISTED CREATION
+          {scope && (
+            <>
+              <br />
+              {/* Every figure on this plate is a season total. Saying so is the point —
+                  without it a reader cannot tell one game from a whole season. */}
+              <span style={{ color: color.rustDeep }}>
+                {formatScope(scope).toUpperCase()}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -514,6 +605,11 @@ export function CreationNetwork({
                         })
                       : undefined
                   }
+                  draw={
+                    playing
+                      ? arcTimings.get(`${bundle.assisterId}-${bundle.shooterId}`) ?? null
+                      : null
+                  }
                 />
               );
             })}
@@ -548,6 +644,7 @@ export function CreationNetwork({
                 key={node.personId}
                 node={node}
                 dimmed={isNodeDimmed(selection, node.personId)}
+                fadeDelay={playing ? nodeIndex.get(node.personId) ?? 0 : null}
               />
             ))}
           </g>
