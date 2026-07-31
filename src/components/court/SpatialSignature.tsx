@@ -175,11 +175,10 @@ export function SpatialSignature({
 
   // Shots outside the 40 ft crop cannot be drawn honestly, so they are counted and named
   // rather than clamped to the edge — a mark at the crop line would assert a location the
-  // shot does not have. (On the validated connection this is zero.)
-  const visible = connection.shots.filter((shot) =>
-    isInsideCrop(shotToCourt(shot.locX, shot.locY)),
-  );
-  const clipped = connection.shots.length - visible.length;
+  // shot does not have. That exclusion now happens once, in `selectConnection`, so the
+  // marks, the caption count, the tally and the §F reading all describe the SAME shots.
+  const visible = connection.shots;
+  const clipped = connection.clipped;
 
   const caption = `${connection.assisterName.toUpperCase()} → ${connection.shooterName.toUpperCase()}`
     + ` · ${formatShare(Math.round(connection.share * 10) / 10)} OF UNIT CREATION`

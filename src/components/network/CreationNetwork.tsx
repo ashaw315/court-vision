@@ -362,6 +362,11 @@ export type CreationNetworkProps = {
   /** What the plate dropped to stay legible, if anything — stated, never implied. */
   densityNote?: string | null;
   /**
+   * The scope BEFORE density thinning. §D reports each player's share of this, so a thinned
+   * plate does not renormalise its bars to a flattering 100%.
+   */
+  fullScope?: GrainResponse | null;
+  /**
    * Play the draw-in. When false the plate renders its final static composition
    * immediately — which is what `prefers-reduced-motion` gets, and what the server
    * renders.
@@ -375,6 +380,7 @@ export function CreationNetwork({
   onSelectConnection,
   scope = null,
   densityNote = null,
+  fullScope = null,
   animate = false,
 }: CreationNetworkProps) {
   const nodes = buildRoleNodes(data);
@@ -385,7 +391,7 @@ export function CreationNetwork({
   });
   const nameById = new Map(data.players.map((player) => [player.personId, player.displayName]));
   const interactive = typeof onSelectConnection === 'function';
-  const origination = buildOrigination(nodes);
+  const origination = buildOrigination(nodes, fullScope ?? data);
   const reading = buildReading(connections, nodes);
 
   /**

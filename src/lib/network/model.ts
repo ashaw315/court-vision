@@ -515,16 +515,46 @@ export function buildStrands(
   return { strands: [...beads, ...ribbons, ...hot], bundles, labels };
 }
 
-/** Origination bars: who creates, ordered, as a share of the unit's assisted creation. */
-export function buildOrigination(nodes: RoleNode[]) {
+/**
+ * Origination bars: who creates, ordered, as a share of assisted creation.
+ *
+ * `scope` is the FULL grain response, before any density thinning. On a thinned team plate
+ * the node's own `originatedShare` is measured against the drawn subgraph, so the bars
+ * renormalised to 100% and implied the eight shown names were the whole roster's creation
+ * — Claxton read 27.2% when his true team share is 13.0%. Passing the unthinned scope makes
+ * each bar a true share of the season; the bars then sum to the coverage the density note
+ * already discloses (~31%) instead of to a flattering 100%.
+ *
+ * For an uncapped grain the two denominators are identical, so nothing changes there.
+ */
+export function buildOrigination(nodes: RoleNode[], scope?: GrainResponse) {
+  const scopeTotal = scope
+    ? scope.edges.reduce((sum, edge) => sum + edge.count, 0)
+    : 0;
+
+  const originatedInScope = new Map<number, number>();
+  if (scope) {
+    for (const edge of scope.edges) {
+      originatedInScope.set(
+        edge.assisterId,
+        (originatedInScope.get(edge.assisterId) ?? 0) + edge.count,
+      );
+    }
+  }
+
   return [...nodes]
-    .sort((a, b) => b.originatedShare - a.originatedShare)
-    .map((node) => ({
-      personId: node.personId,
-      name: node.name,
-      share: node.originatedShare * 100,
-      label: formatShare(Math.round(node.originatedShare * 1000) / 10),
-    }));
+    .map((node) => {
+      const share = scope && scopeTotal
+        ? ((originatedInScope.get(node.personId) ?? 0) / scopeTotal) * 100
+        : node.originatedShare * 100;
+      return {
+        personId: node.personId,
+        name: node.name,
+        share,
+        label: formatShare(Math.round(share * 10) / 10),
+      };
+    })
+    .sort((a, b) => b.share - a.share);
 }
 
 /**
@@ -557,8 +587,14 @@ export function buildReading(
   const leadCreator = originators[0];
 
   // "Finisher" = receives most while originating least — the clearest scorer.
+  //
+  // `assistedPct === null` means we have NO made baskets for that player in this scope, so
+  // there is no split to state. Naming them here printed a bare em-dash into the middle of
+  // a sentence ("Williams on — assisted") on 20 of 22 player grains. A null is a value we
+  // do not have, not a value of zero, so the honest move is to leave them out rather than
+  // describe them with a placeholder.
   const finishers = [...nodes]
-    .filter((node) => node.receivedShare > node.originatedShare)
+    .filter((node) => node.receivedShare > node.originatedShare && node.assistedPct !== null)
     .sort((a, b) => b.receivedShare - a.receivedShare);
 
   const sentences: string[] = [];
@@ -572,6 +608,8 @@ export function buildReading(
     `${leadCreator.name} originates ${formatPct(leadCreator.originatedShare)} of it.`,
   );
 
+  // With no qualifying finisher the clause is simply omitted — an empty "They finish
+  // through ." is worse than saying nothing.
   if (finishers.length > 0) {
     const named = finishers.slice(0, 2);
     const description = named

@@ -34,11 +34,14 @@ export function Instrument({
   data,
   scope = null,
   densityNote = null,
+  fullScope = null,
 }: {
   data: GrainResponse;
   scope?: SeasonScope | null;
   /** What the plate had to drop to stay legible, if anything. Team grain only. */
   densityNote?: string | null;
+  /** The scope before thinning, so §D can report true whole-scope shares. */
+  fullScope?: GrainResponse | null;
 }) {
   const [selection, setSelection] = useState<ConnectionSelection | null>(null);
 
@@ -53,7 +56,8 @@ export function Instrument({
    */
   const scopeKey = `${data.scope.grain}:${data.scope.id ?? 'team'}`;
   const [lastScope, setLastScope] = useState(scopeKey);
-  if (lastScope !== scopeKey) {
+  const scopeJustChanged = lastScope !== scopeKey;
+  if (scopeJustChanged) {
     setLastScope(scopeKey);
     setSelection(null);
   }
@@ -81,24 +85,50 @@ export function Instrument({
    *
    * Under reduced motion there is no exit to play, so the panel is dropped immediately.
    */
-  const [exiting, setExiting] = useState<typeof connection>(null);
-  const previous = useRef(connection);
+  // The exiting connection travels WITH the scope it belonged to, so a slide-out can never
+  // be replayed under a different subject's heading.
+  const [exiting, setExiting] = useState<{ connection: typeof connection; scopeKey: string } | null>(null);
+  // The previous connection AND the scope it belonged to. Tracking the connection alone was
+  // the bug: on a grain change the effect stamped the outgoing connection with the NEW
+  // scopeKey, so the guard below saw a match and slid the old scope's court back in one
+  // frame after it had correctly cleared.
+  const previous = useRef<{ connection: typeof connection; scopeKey: string }>({
+    connection,
+    scopeKey,
+  });
 
   useEffect(() => {
     const was = previous.current;
-    previous.current = connection;
+    previous.current = { connection, scopeKey };
 
-    if (was && !connection && animate) {
-      setExiting(was);
+    // Only play the exit when the connection was cleared WITHIN one scope — a deselect.
+    // A scope change is not a deselect; its court must go immediately, not slide.
+    if (was.connection && !connection && animate && was.scopeKey === scopeKey) {
+      setExiting({ connection: was.connection, scopeKey: was.scopeKey });
       const timer = window.setTimeout(() => setExiting(null), COURT_SLIDE_MS);
       return () => window.clearTimeout(timer);
     }
     setExiting(null);
     return undefined;
-  }, [connection, animate]);
+  }, [connection, animate, scopeKey]);
 
-  const shown = connection ?? exiting;
-  const isExiting = connection === null && exiting !== null;
+  /**
+   * Never animate a connection out under a DIFFERENT scope's heading.
+   *
+   * The slide-out holds the last connection for COURT_SLIDE_MS so it can leave gracefully.
+   * That is right for a deselect, but on a grain change it kept the previous scope's court
+   * on screen while the network header already read the new one — measured at ~12 frames
+   * where "FIVE-MAN UNIT" captioned a 94-basket team-grain connection. A stale reading is
+   * worse than a missing transition, so a scope change drops the court immediately.
+   */
+  const exitingHere = exiting !== null
+    && !scopeJustChanged
+    && exiting.scopeKey === scopeKey
+    ? exiting.connection
+    : null;
+
+  const shown = connection ?? exitingHere;
+  const isExiting = connection === null && shown !== null;
 
   const handleSelect = (clicked: ConnectionSelection) => {
     setSelection((current) => toggleSelection(current, clicked));
@@ -149,6 +179,7 @@ export function Instrument({
             scope={scope}
             animate={animate}
             densityNote={densityNote}
+            fullScope={fullScope}
           />
         </div>
 

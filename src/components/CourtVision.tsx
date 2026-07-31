@@ -265,7 +265,13 @@ export function CourtVision({
         <StatusLine state={status} message={message} />
       </nav>
 
-      <Instrument data={plate} scope={scope} densityNote={densityNoteText(note)} />
+      <Instrument
+        data={plate}
+        scope={scope}
+        densityNote={densityNoteText(note)}
+        // The unthinned payload: §D reports shares of this, not of the drawn subgraph.
+        fullScope={data}
+      />
     </main>
   );
 }

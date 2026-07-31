@@ -240,7 +240,7 @@ describe('the §F / READING is computed, not hardcoded', () => {
   };
 
   const reading = (shots: ShotEvent[]) =>
-    buildSpatialReading({ ...base, shots, tally: tallyShots(shots) });
+    buildSpatialReading({ ...base, shots, clipped: 0, tally: tallyShots(shots) });
 
   it('calls a rim-heavy connection a rim connection', () => {
     const text = reading([

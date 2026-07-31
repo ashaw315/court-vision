@@ -1,7 +1,14 @@
 import type { GrainResponse, ShotEvent } from '@/lib/contracts';
 import { formatShare } from '@/lib/network/model';
 
-import { classifyShot, shotSide, tallyShots, type ShotTally } from './geometry';
+import {
+  classifyShot,
+  isInsideCrop,
+  shotSide,
+  shotToCourt,
+  tallyShots,
+  type ShotTally,
+} from './geometry';
 
 /**
  * Selecting and describing ONE creation connection for the Spatial Signature plate.
@@ -15,8 +22,18 @@ export type ConnectionShots = {
   shooterId: number;
   assisterName: string;
   shooterName: string;
-  /** The made baskets this connection produced, at their real court locations. */
+  /**
+   * The made baskets this connection produced, at their real court locations — ONLY those
+   * that can actually be drawn inside the 40 ft crop. The plate's marks, its caption count,
+   * its tally and its §F reading all derive from this one list, so they cannot disagree.
+   */
   shots: ShotEvent[];
+  /**
+   * Made baskets excluded because they fall outside the crop. Kept as a count so the plate
+   * can disclose them ("2 baskets beyond 40 ft, not shown") rather than dropping them
+   * silently — the number must stay nameable even though it cannot be plotted.
+   */
+  clipped: number;
   /** Share of the unit's total assisted creation, 0–100. */
   share: number;
   tally: ShotTally;
@@ -37,13 +54,20 @@ export function selectConnection(
   const names = new Map(data.players.map((p) => [p.personId, p.displayName]));
   if (!names.has(assisterId) || !names.has(shooterId)) return null;
 
-  const shots = data.shots.filter(
+  const matching = data.shots.filter(
     (shot) =>
       shot.made
       && shot.assisted
       && shot.assisterId === assisterId
       && shot.shooterId === shooterId,
   );
+
+  // The crop decision happens HERE, once. Previously the component filtered for plotting
+  // while the tally and reading used the unfiltered list, so a make beyond 40 ft would
+  // plot 7 marks under a caption reading 8 baskets. No such shot exists in the season yet,
+  // which is exactly why it needed pinning rather than leaving to luck.
+  const shots = matching.filter((shot) => isInsideCrop(shotToCourt(shot.locX, shot.locY)));
+  const clipped = matching.length - shots.length;
 
   const totalAssisted = data.edges.reduce((sum, edge) => sum + edge.count, 0);
   const edge = data.edges.find(
@@ -56,6 +80,7 @@ export function selectConnection(
     assisterName: names.get(assisterId)!,
     shooterName: names.get(shooterId)!,
     shots,
+    clipped,
     share: totalAssisted && edge ? (edge.count / totalAssisted) * 100 : 0,
     tally: tallyShots(shots),
   };
