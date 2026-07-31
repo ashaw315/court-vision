@@ -1,6 +1,8 @@
 import { CreationNetwork } from '@/components/network/CreationNetwork';
+import { SpatialSignature } from '@/components/court/SpatialSignature';
 import { GrainResponse } from '@/lib/contracts';
 import { getLineup, getLineupGrain } from '@/lib/api/queries';
+import { biggestConnection } from '@/lib/court/connection';
 import { color } from '@/lib/design/tokens';
 
 /**
@@ -36,9 +38,23 @@ export default async function Home() {
     );
   }
 
+  // Stage 2 shows the unit's biggest connection (Claxton → Porter Jr., 26 baskets).
+  // Hardcoded on purpose — making it selectable from the network is Stage 3.
+  const connection = biggestConnection(parsed.data);
+
   return (
-    <main style={{ background: color.shell, minHeight: '100vh', padding: '24px 0 48px' }}>
+    <main
+      style={{
+        background: color.shell,
+        minHeight: '100vh',
+        padding: '24px 0 48px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 48,
+      }}
+    >
       <CreationNetwork data={parsed.data} />
+      {connection && <SpatialSignature connection={connection} />}
     </main>
   );
 }
