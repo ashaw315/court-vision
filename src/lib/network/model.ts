@@ -1,0 +1,384 @@
+import { scaleLinear } from 'd3-scale';
+
+import type { AssistEdge, GrainResponse } from '@/lib/contracts';
+import { encoding, network } from '@/lib/design/tokens';
+
+/**
+ * Turns a `GrainResponse` into everything the Creation Network plate draws.
+ *
+ * Pure functions over the contract — no React, no DOM, no fetching. That is what makes the
+ * encoding testable: role position, share, the acid threshold and the reading annotation
+ * are all claims about the data, and each is asserted in tests/network-model.test.ts.
+ *
+ * d3-scale is used as a maths helper for positioning only. React owns every element.
+ */
+
+export type RoleNode = {
+  personId: number;
+  name: string;
+  /** Share of the unit's assisted creation this player ORIGINATES (0–1). */
+  originatedShare: number;
+  /** Share this player RECEIVES (0–1). */
+  receivedShare: number;
+  /** originated − received, in [-1, 1]. Drives vertical placement. */
+  roleBalance: number;
+  /** Fraction of this player's made baskets that were assisted (0–1), or null if none. */
+  assistedPct: number | null;
+  /** Made baskets, for honesty about sample size behind `assistedPct`. */
+  madeBaskets: number;
+  x: number;
+  y: number;
+  /** Display index, "01".."05", ordered by origination. */
+  index: string;
+};
+
+export type Strand = {
+  d: string;
+  color: string;
+  width: number;
+  dash: string;
+  opacity: number;
+  /** Only the centre strand of a bundle carries the arrowhead. */
+  marker: 'warm' | 'acid' | null;
+};
+
+export type ArcLabel = { x: number; y: number; text: string; color: string };
+
+export type Connection = {
+  assisterId: number;
+  shooterId: number;
+  count: number;
+  /** Percentage of the unit's total assisted creation, 0–100. */
+  share: number;
+  /** Points per made basket — 2.00 to 3.00. See `acidThreshold`. */
+  pointsPerBasket: number;
+  isHighValue: boolean;
+};
+
+/**
+ * The acid-accent threshold, in points per MADE basket.
+ *
+ * The design encodes "acid = 1.42+ pts / attempt". That number cannot be used here, and
+ * the reason matters: `AssistEdge` counts only made baskets, and the Phase 2 contract
+ * forbids an assisted miss, so attempts-per-connection is not derivable from this data at
+ * all. Points per made basket therefore ranges 2.00 (all twos) to 3.00 (all threes), and
+ * applying 1.42 to it would paint EVERY connection acid — verified against the real top
+ * lineup: 20 of 20.
+ *
+ * So the design's INTENT is preserved rather than its literal constant: acid marks the
+ * genuinely high-value connections and stays rare. 2.70 keeps it at roughly the top
+ * quarter–third of connections (6 of 20 on the top lineup), which is what the design's
+ * plate shows — 2 acid arcs out of 12.
+ *
+ * Stated plainly in the ENCODING legend so the plate never implies a per-attempt figure
+ * it does not have.
+ */
+export const ACID_THRESHOLD_PPB = 2.7;
+
+/** Percent formatting. `assistedPct` serialises as `1`, not `1.0` — always format. */
+export function formatPct(value: number | null, digits = 0): string {
+  if (value === null) return '—';
+  return `${(value * 100).toFixed(digits)}%`;
+}
+
+/** Share formatting, matching the design's `fmt`: whole numbers bare, else one decimal. */
+export function formatShare(share: number): string {
+  return `${share % 1 === 0 ? share.toFixed(0) : share.toFixed(1)}%`;
+}
+
+/**
+ * Per-connection shares of the unit's total assisted creation.
+ *
+ * Shares are over made assisted baskets, so they sum to 100% by construction — which is
+ * exactly what the design's header claims ("ARCS SUM TO 100% OF ASSISTED CREATION").
+ */
+export function buildConnections(edges: AssistEdge[]): Connection[] {
+  const total = edges.reduce((sum, edge) => sum + edge.count, 0);
+  if (total === 0) return [];
+
+  return edges
+    .map((edge) => {
+      const pointsPerBasket = edge.points / edge.count;
+      return {
+        assisterId: edge.assisterId,
+        shooterId: edge.shooterId,
+        count: edge.count,
+        share: (edge.count / total) * 100,
+        pointsPerBasket,
+        isHighValue: pointsPerBasket >= ACID_THRESHOLD_PPB,
+      };
+    })
+    .sort((a, b) => b.share - a.share);
+}
+
+/**
+ * Per-player assisted split, from the shots this scope actually contains.
+ *
+ * Honest by construction: a player's empty node fill is their self-created share, computed
+ * from real makes. A player with no made baskets gets null, not 0 — "no data" and "0%
+ * assisted" are different claims, and the node renders empty with an em dash rather than
+ * implying a pure self-creator.
+ */
+export function playerSplits(
+  response: GrainResponse,
+): Map<number, { assistedPct: number | null; madeBaskets: number }> {
+  const tally = new Map<number, { made: number; assisted: number }>();
+
+  for (const shot of response.shots) {
+    if (!shot.made) continue;
+    const entry = tally.get(shot.shooterId) ?? { made: 0, assisted: 0 };
+    entry.made += 1;
+    // `assisted` is the tag, not `assisterId !== null`: a tagged basket whose assister
+    // could not be resolved is still assisted. Using the id here would silently push
+    // unresolved assists into "self-created" and misstate the fill.
+    if (shot.assisted) entry.assisted += 1;
+    tally.set(shot.shooterId, entry);
+  }
+
+  const splits = new Map<number, { assistedPct: number | null; madeBaskets: number }>();
+  for (const player of response.players) {
+    const entry = tally.get(player.personId);
+    splits.set(player.personId, {
+      assistedPct: entry && entry.made > 0 ? entry.assisted / entry.made : null,
+      madeBaskets: entry?.made ?? 0,
+    });
+  }
+  return splits;
+}
+
+/**
+ * Place the five players in role-space.
+ *
+ * Vertical axis is creation ORIGINATED versus RECEIVED — the design's whole premise
+ * ("creators above, scorers below"). A player who originates more than they receive rises
+ * toward the ORIGINATES band; one who receives more sinks toward RECEIVES.
+ *
+ * Horizontal placement is legibility only, and carries NO meaning — nodes are spread by
+ * rank so bundles do not stack. The plate says so in its axis caption (vertical axis is
+ * labelled; horizontal is not), and nothing in the encoding legend claims an x meaning.
+ */
+export function buildRoleNodes(response: GrainResponse): RoleNode[] {
+  const totalCount = response.edges.reduce((sum, edge) => sum + edge.count, 0);
+  const splits = playerSplits(response);
+
+  const originated = new Map<number, number>();
+  const received = new Map<number, number>();
+  for (const edge of response.edges) {
+    originated.set(edge.assisterId, (originated.get(edge.assisterId) ?? 0) + edge.count);
+    received.set(edge.shooterId, (received.get(edge.shooterId) ?? 0) + edge.count);
+  }
+
+  const players = response.players.map((player) => {
+    const originatedShare = totalCount
+      ? (originated.get(player.personId) ?? 0) / totalCount
+      : 0;
+    const receivedShare = totalCount
+      ? (received.get(player.personId) ?? 0) / totalCount
+      : 0;
+    const split = splits.get(player.personId) ?? { assistedPct: null, madeBaskets: 0 };
+    return {
+      personId: player.personId,
+      name: player.displayName,
+      originatedShare,
+      receivedShare,
+      roleBalance: originatedShare - receivedShare,
+      assistedPct: split.assistedPct,
+      madeBaskets: split.madeBaskets,
+    };
+  });
+
+  // Vertical: most creator-ish at the ORIGINATES band, most scorer-ish at RECEIVES.
+  // Scaled to the observed spread rather than a fixed [-1,1] so the five always use the
+  // full height — with five players the raw balances cluster near zero, and a fixed domain
+  // would collapse them into an unreadable band.
+  const balances = players.map((p) => p.roleBalance);
+  const spread = Math.max(Math.abs(Math.min(...balances)), Math.abs(Math.max(...balances)), 0.01);
+  const yScale = scaleLinear()
+    .domain([spread, -spread])
+    .range([network.originatesY + 32, network.receivesY - 34])
+    .clamp(true);
+
+  // Horizontal: zig-zag across the full width by role rank, so adjacent ranks never sit
+  // in the same column and the bundles between them have room to read. Legibility only —
+  // x carries no meaning, which is why only the vertical axis is labelled.
+  //
+  // The columns alternate centre → left → right → far-left → far-right, matching the
+  // design's own spread, and are laid out symmetrically about the viewBox centre so the
+  // plate does not drift to one side.
+  const byRole = [...players].sort((a, b) => b.roleBalance - a.roleBalance);
+  const mid = network.viewBox.width / 2;
+  const columns = [mid, mid - 250, mid + 250, mid - 430, mid + 430];
+
+  const ranked = [...players].sort((a, b) => b.originatedShare - a.originatedShare);
+
+  return players.map((player) => {
+    const roleRank = byRole.findIndex((p) => p.personId === player.personId);
+    const originRank = ranked.findIndex((p) => p.personId === player.personId);
+    return {
+      ...player,
+      x: columns[roleRank],
+      y: yScale(player.roleBalance),
+      index: String(originRank + 1).padStart(2, '0'),
+    };
+  });
+}
+
+/**
+ * Build the woven strand bundles.
+ *
+ * A direct port of the design's `buildStrands`: bundle size, stroke width, dash, opacity
+ * and the centre-strand arrowhead all follow the same rules, so the rebuild draws the same
+ * marks. Density encodes share — that is the encoding the legend promises.
+ */
+export function buildStrands(
+  connections: Connection[],
+  nodes: RoleNode[],
+  colors: { warm: string; acid: string },
+): { strands: Strand[]; labels: ArcLabel[] } {
+  const byId = new Map(nodes.map((node) => [node.personId, node]));
+  const { nodeRadius: R, nodeGap: GAP, curvature, weaveSpread } = network;
+
+  const beads: Strand[] = [];
+  const ribbons: Strand[] = [];
+  const hot: Strand[] = [];
+  const labels: ArcLabel[] = [];
+
+  for (const connection of connections) {
+    const from = byId.get(connection.assisterId);
+    const to = byId.get(connection.shooterId);
+    if (!from || !to) continue;
+
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    if (length === 0) continue;
+    dx /= length;
+    dy /= length;
+
+    const sx = from.x + dx * (R + GAP);
+    const sy = from.y + dy * (R + GAP);
+    const ex = to.x - dx * (R + GAP + 4);
+    const ey = to.y - dy * (R + GAP + 4);
+    const mx = (sx + ex) / 2;
+    const my = (sy + ey) / 2;
+    const bow = length * curvature;
+
+    const { share, isHighValue } = connection;
+    const color = isHighValue ? colors.acid : colors.warm;
+    const dense = share >= encoding.denseMinShare;
+    // Strand count IS the share encoding: more share, more strands in the bundle.
+    const count = dense
+      ? Math.max(3, Math.min(13, Math.round(share / 2.1)))
+      : share >= 3 ? 2 : 1;
+    const bucket = isHighValue ? hot : dense ? ribbons : beads;
+    const mid = (count - 1) / 2;
+
+    for (let j = 0; j < count; j += 1) {
+      const offset = bow + (j - mid) * weaveSpread;
+      const qx = mx + dy * offset;
+      const qy = my - dx * offset;
+      const isCentre = Math.abs(j - mid) < 0.6;
+      bucket.push({
+        d: `M${sx.toFixed(1)},${sy.toFixed(1)} Q${qx.toFixed(1)},${qy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`,
+        color,
+        width: dense ? 0.5 : 1.05,
+        dash: dense ? 'none' : '0.1 5.4',
+        opacity: dense ? (isHighValue ? 0.8 : 0.58) : isHighValue ? 0.78 : 0.55,
+        marker: isCentre ? (isHighValue ? 'acid' : 'warm') : null,
+      });
+    }
+
+    // Labels only on the connections worth naming; the rest read as texture.
+    if (share >= encoding.labelMinShare) {
+      // Point on the outer edge of the bundle, at the quarter-point along the arc rather
+      // than its midpoint — with many connections crossing the middle of the plate, the
+      // midpoints all pile up in one place.
+      const lo = bow + (dense ? mid * weaveSpread : 0);
+      const t = 0.34;
+      const qx = mx + dy * lo;
+      const qy = my - dx * lo;
+      const px = (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * qx + t * t * ex;
+      const py = (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * qy + t * t * ey;
+
+      // Offset PERPENDICULAR to the arc, on the bow's side, so the label clears its own
+      // strands instead of being pushed toward the plate centre where everything crowds.
+      const side = Math.sign(lo) || 1;
+      labels.push({
+        x: px + dy * side * 13,
+        y: py - dx * side * 13 + 3,
+        text: formatShare(Math.round(share * 10) / 10),
+        color: isHighValue ? '#7C8C0A' : '#8A3520',
+      });
+    }
+  }
+
+  return { strands: [...beads, ...ribbons, ...hot], labels };
+}
+
+/** Origination bars: who creates, ordered, as a share of the unit's assisted creation. */
+export function buildOrigination(nodes: RoleNode[]) {
+  return [...nodes]
+    .sort((a, b) => b.originatedShare - a.originatedShare)
+    .map((node) => ({
+      personId: node.personId,
+      name: node.name,
+      share: node.originatedShare * 100,
+      label: formatShare(Math.round(node.originatedShare * 1000) / 10),
+    }));
+}
+
+/**
+ * The §C / READING annotation, computed from the data — never hardcoded.
+ *
+ * Says three true things: how concentrated the creation is, who carries it, and who the
+ * unit's finishers are. Wording adapts to what the numbers actually show, so a distributed
+ * unit does not get described as concentrated.
+ */
+export function buildReading(
+  connections: Connection[],
+  nodes: RoleNode[],
+): string {
+  if (connections.length === 0 || nodes.length === 0) {
+    return 'No assisted creation recorded for this unit.';
+  }
+
+  const top = connections[0];
+  const byId = new Map(nodes.map((node) => [node.personId, node]));
+  const creator = byId.get(top.assisterId)?.name ?? 'unknown';
+  const scorer = byId.get(top.shooterId)?.name ?? 'unknown';
+
+  // Top-third concentration is the honest summary statistic here: with 20 connections a
+  // single share is small by construction, so leading with one number would understate
+  // how concentrated the unit really is.
+  const topThree = connections.slice(0, 3).reduce((sum, c) => sum + c.share, 0);
+  const character = topThree >= 40 ? 'concentrated' : topThree >= 28 ? 'balanced' : 'distributed';
+
+  const originators = [...nodes].sort((a, b) => b.originatedShare - a.originatedShare);
+  const leadCreator = originators[0];
+
+  // "Finisher" = receives most while originating least — the clearest scorer.
+  const finishers = [...nodes]
+    .filter((node) => node.receivedShare > node.originatedShare)
+    .sort((a, b) => b.receivedShare - a.receivedShare);
+
+  const sentences: string[] = [];
+
+  sentences.push(
+    `Creation is ${character}: the top three connections carry ${formatShare(Math.round(topThree * 10) / 10)} `
+      + `of everything this unit assists, led by ${creator} to ${scorer} at ${formatShare(Math.round(top.share * 10) / 10)}.`,
+  );
+
+  sentences.push(
+    `${leadCreator.name} originates ${formatPct(leadCreator.originatedShare)} of it.`,
+  );
+
+  if (finishers.length > 0) {
+    const named = finishers.slice(0, 2);
+    const description = named
+      .map((node) => `${node.name} on ${formatPct(node.assistedPct)} assisted`)
+      .join(' and ');
+    sentences.push(`${named.length > 1 ? 'They finish through' : 'It finishes through'} ${description}.`);
+  }
+
+  return sentences.join(' ');
+}

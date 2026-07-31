@@ -1,0 +1,578 @@
+import type { GrainResponse } from '@/lib/contracts';
+import { color, encoding, font, network, type } from '@/lib/design/tokens';
+import {
+  ACID_THRESHOLD_PPB,
+  buildConnections,
+  buildOrigination,
+  buildReading,
+  buildRoleNodes,
+  buildStrands,
+  formatPct,
+  type RoleNode,
+} from '@/lib/network/model';
+
+/**
+ * FIG. 12b — Creation Network, position as role.
+ *
+ * A faithful React + hand-rolled SVG rebuild of `design/creation-network.html`, fed by a
+ * real `GrainResponse`. Every element is JSX; d3 appears only as maths (scale/geometry) in
+ * `lib/network/model`, never touching the DOM.
+ *
+ * Static resting state only — no animation, no interaction, no court plate. Those are
+ * later stages.
+ */
+
+const VIEW = network.viewBox;
+
+/** Node label placement: the design pushes labels away from the plate's centre column. */
+function labelAnchor(node: RoleNode): {
+  tx: number; ty: number; iy: number; anchor: 'start' | 'middle' | 'end';
+} {
+  const isCentreColumn = Math.abs(node.x - VIEW.width / 2) < 120;
+  if (isCentreColumn) {
+    // Centre nodes label above or below, whichever keeps clear of the strand bundles.
+    const above = node.y < VIEW.height / 2;
+    return above
+      ? { tx: node.x, ty: node.y - 50, iy: node.y - 63, anchor: 'middle' }
+      : { tx: node.x, ty: node.y + 52, iy: node.y + 39, anchor: 'middle' };
+  }
+  const toRight = node.x > VIEW.width / 2;
+  return toRight
+    ? { tx: node.x + 46, ty: node.y + 4, iy: node.y - 9, anchor: 'start' }
+    : { tx: node.x - 46, ty: node.y + 4, iy: node.y - 9, anchor: 'end' };
+}
+
+function NodeMark({ node }: { node: RoleNode }) {
+  const R = network.nodeRadius;
+  const anchor = labelAnchor(node);
+  const clipId = `fill-${node.personId}`;
+
+  // Fill height IS the assisted split: a node filled 80% reads 80% assisted, with the
+  // empty portion being self-created. A null split (no made baskets) draws empty — never
+  // a full or zero-filled node, because that would assert a measure we do not have.
+  const split = node.assistedPct ?? 0;
+  const fillTop = node.y + R - 2 * R * split;
+
+  return (
+    <g>
+      <defs>
+        <clipPath id={clipId}>
+          <rect x={node.x - R} y={fillTop} width={2 * R} height={2 * R} />
+        </clipPath>
+      </defs>
+
+      <circle cx={node.x} cy={node.y} r={R} fill={color.ground} />
+      {node.assistedPct !== null && (
+        <>
+          <circle
+            cx={node.x}
+            cy={node.y}
+            r={R}
+            fill={color.rust}
+            opacity={encoding.fillOpacity}
+            clipPath={`url(#${clipId})`}
+          />
+          {/* Hairline at the fill level — reads the value precisely off the node. */}
+          <line
+            x1={node.x - R + 1.5}
+            y1={fillTop}
+            x2={node.x + R - 1.5}
+            y2={fillTop}
+            stroke={color.structure}
+            strokeWidth={0.6}
+            opacity={0.6}
+          />
+        </>
+      )}
+      <circle
+        cx={node.x}
+        cy={node.y}
+        r={R}
+        fill="none"
+        stroke={color.ink}
+        strokeWidth={encoding.ringWidth}
+      />
+
+      <text
+        x={anchor.tx}
+        y={anchor.iy}
+        textAnchor={anchor.anchor}
+        fill={color.mutedLight}
+        style={{
+          fontFamily: font.mono,
+          fontSize: type.nodeIndex.size,
+          letterSpacing: type.nodeIndex.letterSpacing,
+        }}
+      >
+        {node.index}
+      </text>
+      <text
+        x={anchor.tx}
+        y={anchor.ty}
+        textAnchor={anchor.anchor}
+        fill={color.ink}
+        style={{
+          fontFamily: font.mono,
+          fontSize: type.nodeName.size,
+          letterSpacing: type.nodeName.letterSpacing,
+        }}
+      >
+        {node.name.toUpperCase()}
+      </text>
+      <text
+        x={anchor.tx}
+        y={anchor.ty + 13}
+        textAnchor={anchor.anchor}
+        fill={color.rustDeep}
+        style={{
+          fontFamily: font.mono,
+          fontSize: type.nodeReadout.size,
+          letterSpacing: type.nodeReadout.letterSpacing,
+        }}
+      >
+        {node.assistedPct === null
+          ? 'NO MADE BASKETS'
+          : `${formatPct(node.assistedPct)} ASSISTED`}
+      </text>
+    </g>
+  );
+}
+
+export function CreationNetwork({ data }: { data: GrainResponse }) {
+  const nodes = buildRoleNodes(data);
+  const connections = buildConnections(data.edges);
+  const { strands, labels } = buildStrands(connections, nodes, {
+    warm: color.rust,
+    acid: color.acid,
+  });
+  const origination = buildOrigination(nodes);
+  const reading = buildReading(connections, nodes);
+
+  const topShare = connections[0]?.share ?? 0;
+  const topThree = connections.slice(0, 3).reduce((sum, c) => sum + c.share, 0);
+  const character = topThree >= 40 ? 'CONCENTRATED' : topThree >= 28 ? 'BALANCED' : 'DISTRIBUTED';
+
+  const monoLabel = (size: number, spacing: string, fill: string) => ({
+    fontFamily: font.mono,
+    fontSize: size,
+    letterSpacing: spacing,
+    color: fill,
+  });
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        maxWidth: plateWidth,
+        margin: '0 auto',
+        background: color.ground,
+        color: color.ink,
+        fontFamily: font.mono,
+        padding: 'clamp(20px, 3vw, 34px) clamp(18px, 4vw, 56px) 44px',
+        boxSizing: 'border-box',
+      }}
+    >
+      {/* ── header rule ─────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          gap: 16,
+          paddingBottom: 9,
+          borderBottom: `1px solid ${color.rule}`,
+          ...monoLabel(type.header.size, type.header.letterSpacing, color.muted),
+        }}
+      >
+        <span>FIG. 12b — CREATION NETWORK · FIVE-MAN UNIT · POSITION AS ROLE</span>
+        <span style={{ whiteSpace: 'nowrap' }}>N.º 0034 · 05 · CVN · MMXXVI</span>
+      </div>
+
+      {/* ── title ───────────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          flexWrap: 'wrap',
+          gap: 18,
+          paddingTop: 22,
+        }}
+      >
+        <h1
+          style={{
+            fontFamily: font.serif,
+            fontWeight: type.title.weight,
+            fontSize: 'clamp(34px, 4.2vw, 58px)',
+            lineHeight: type.title.lineHeight,
+            letterSpacing: type.title.letterSpacing,
+            margin: 0,
+          }}
+        >
+          Creation Network
+        </h1>
+        <div
+          style={{
+            fontFamily: font.serif,
+            fontStyle: 'italic',
+            fontSize: type.subhead.size,
+            lineHeight: type.subhead.lineHeight,
+            color: color.text,
+            paddingBottom: 4,
+          }}
+        >
+          arranged by role —<br />creators above, scorers below
+        </div>
+        <div style={{ flex: 1 }} />
+        <div
+          style={{
+            textAlign: 'right',
+            paddingBottom: 6,
+            ...monoLabel(type.headerNote.size, type.headerNote.letterSpacing, color.muted),
+          }}
+        >
+          VERTICAL AXIS · CREATION ORIGINATED
+          <br />
+          ARCS SUM TO 100% OF ASSISTED CREATION
+        </div>
+      </div>
+
+      {/* ── state line ──────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          flexWrap: 'wrap',
+          gap: 26,
+          paddingTop: 10,
+          ...monoLabel(type.headerNote.size, type.headerNote.letterSpacing, color.mutedLight),
+        }}
+      >
+        <span>§A / RESTING STATE · ALL CONNECTIONS SHOWN</span>
+        <span style={{ color: color.rustDeep }}>
+          TOP CONNECTION {formatPct(topShare / 100, topShare % 1 === 0 ? 0 : 1)} · {character}
+        </span>
+        <span>{data.scope.label.toUpperCase()}</span>
+      </div>
+
+      {/* ── the network ─────────────────────────────────────────────── */}
+      <div style={{ position: 'relative', marginTop: 4 }}>
+        <svg
+          viewBox={`0 0 ${VIEW.width} ${VIEW.height}`}
+          style={{ display: 'block', width: '100%', height: 'auto', overflow: 'visible' }}
+          role="img"
+          aria-label={`Creation network for ${data.scope.label}. ${reading}`}
+        >
+          <defs>
+            <marker
+              id="ah-warm"
+              viewBox="0 0 8 8"
+              refX="6.2"
+              refY="3"
+              markerWidth="6.4"
+              markerHeight="6.4"
+              orient="auto"
+            >
+              <path
+                d="M0.8,0.8 L6,3 L0.8,5.2"
+                fill="none"
+                stroke={color.rust}
+                strokeWidth="0.75"
+                strokeLinecap="round"
+              />
+            </marker>
+            <marker
+              id="ah-acid"
+              viewBox="0 0 8 8"
+              refX="6.2"
+              refY="3"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto"
+            >
+              <path
+                d="M0.8,0.8 L6,3 L0.8,5.2"
+                fill="none"
+                stroke={color.acid}
+                strokeWidth="0.9"
+                strokeLinecap="round"
+              />
+            </marker>
+          </defs>
+
+          {/* role-space bands */}
+          <g>
+            <line
+              x1={network.axisLeft}
+              y1={network.originatesY}
+              x2={network.axisRight}
+              y2={network.originatesY}
+              stroke={color.rule}
+              strokeWidth={0.6}
+              strokeDasharray="1 5"
+            />
+            <line
+              x1={network.axisLeft}
+              y1={network.receivesY}
+              x2={network.axisRight}
+              y2={network.receivesY}
+              stroke={color.rule}
+              strokeWidth={0.6}
+              strokeDasharray="1 5"
+            />
+            <text
+              x={network.axisLeft}
+              y={network.originatesY - 10}
+              fill={color.mutedLight}
+              style={{
+                fontFamily: font.mono,
+                fontSize: type.axisCaption.size,
+                letterSpacing: type.axisCaption.letterSpacing,
+              }}
+            >
+              ORIGINATES CREATION
+            </text>
+            <text
+              x={network.axisLeft}
+              y={network.receivesY + 16}
+              fill={color.mutedLight}
+              style={{
+                fontFamily: font.mono,
+                fontSize: type.axisCaption.size,
+                letterSpacing: type.axisCaption.letterSpacing,
+              }}
+            >
+              RECEIVES CREATION
+            </text>
+          </g>
+
+          {/* woven strand bundles — density encodes share */}
+          <g>
+            {strands.map((strand, i) => (
+              <path
+                key={i}
+                d={strand.d}
+                fill="none"
+                stroke={strand.color}
+                strokeWidth={strand.width}
+                strokeDasharray={strand.dash}
+                strokeLinecap="round"
+                opacity={strand.opacity}
+                markerEnd={strand.marker ? `url(#ah-${strand.marker})` : undefined}
+              />
+            ))}
+          </g>
+
+          {/* % labels, only on connections >= 7% */}
+          <g>
+            {labels.map((label, i) => (
+              <text
+                key={i}
+                x={label.x}
+                y={label.y}
+                textAnchor="middle"
+                fill={label.color}
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: type.arcLabel.size,
+                  letterSpacing: type.arcLabel.letterSpacing,
+                }}
+              >
+                {label.text}
+              </text>
+            ))}
+          </g>
+
+          <g>
+            {nodes.map((node) => (
+              <NodeMark key={node.personId} node={node} />
+            ))}
+          </g>
+        </svg>
+      </div>
+
+      {/* ── footer ──────────────────────────────────────────────────── */}
+      <div
+        style={{
+          marginTop: 18,
+          borderTop: `1px solid ${color.rule}`,
+          paddingTop: 14,
+          display: 'flex',
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+          gap: 'clamp(24px, 4vw, 60px)',
+        }}
+      >
+        <Encoding />
+        <Reading text={reading} />
+        <Origination rows={origination} />
+        <div style={{ flex: 1 }} />
+        <div
+          style={{
+            textAlign: 'right',
+            lineHeight: 1.8,
+            ...monoLabel(type.footer.size, type.footer.letterSpacing, color.mutedLight),
+          }}
+        >
+          COURT VISION NETWORK
+          <br />
+          PLATE 1 / 2 — POSITION AS ROLE
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const plateWidth = network.viewBox.width * 1.36; // the design's 1440px page
+
+function SectionMark({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontFamily: font.mono,
+        fontSize: type.sectionMark.size,
+        letterSpacing: type.sectionMark.letterSpacing,
+        color: color.mutedLight,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function LegendRow({ children, swatch }: { children: React.ReactNode; swatch: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      {swatch}
+      <span
+        style={{
+          fontFamily: font.mono,
+          fontSize: type.legend.size,
+          letterSpacing: type.legend.letterSpacing,
+          color: color.text,
+        }}
+      >
+        {children}
+      </span>
+    </div>
+  );
+}
+
+function Encoding() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <SectionMark>§B / ENCODING</SectionMark>
+
+      <LegendRow
+        swatch={
+          <svg width={92} height={14} style={{ display: 'block', overflow: 'visible' }}>
+            <path d="M2,3 C26,3 62,3 90,3" fill="none" stroke={color.rust} strokeWidth={1} strokeDasharray="0.1 5.5" strokeLinecap="round" opacity={0.6} />
+            {[8, 9.6, 11.2, 12.8].map((y) => (
+              <path key={y} d={`M2,${y} C26,${y} 62,${y} 90,${y}`} fill="none" stroke={color.rust} strokeWidth={0.5} strokeLinecap="round" opacity={0.6} />
+            ))}
+          </svg>
+        }
+      >
+        DENSITY · SHARE OF UNIT CREATION
+      </LegendRow>
+
+      <LegendRow
+        swatch={
+          <svg width={92} height={12} style={{ display: 'block', overflow: 'visible' }}>
+            <path d="M2,4 C26,4 62,4 90,4" fill="none" stroke={color.rust} strokeWidth={1.6} strokeLinecap="round" opacity={0.8} />
+            <path d="M2,10 C26,10 62,10 90,10" fill="none" stroke={color.acid} strokeWidth={1.6} strokeLinecap="round" />
+          </svg>
+        }
+      >
+        {/* Stated as points per MADE basket, because attempts-per-connection is not
+            derivable from this data — the legend must not imply a figure we lack. */}
+        HUE · SHOT VALUE — ACID = {ACID_THRESHOLD_PPB.toFixed(2)}+ PTS / MADE BASKET
+      </LegendRow>
+
+      <LegendRow
+        swatch={
+          <svg width={92} height={26} style={{ display: 'block', overflow: 'visible' }}>
+            <defs>
+              <clipPath id="lg-a"><rect x={0} y={16.4} width={30} height={12} /></clipPath>
+              <clipPath id="lg-b"><rect x={34} y={6.6} width={30} height={22} /></clipPath>
+            </defs>
+            <circle cx={12} cy={13} r={11} fill={color.rust} opacity={encoding.fillOpacity} clipPath="url(#lg-a)" />
+            <circle cx={12} cy={13} r={11} fill="none" stroke={color.ink} strokeWidth={encoding.ringWidth} />
+            <circle cx={46} cy={13} r={11} fill={color.rust} opacity={encoding.fillOpacity} clipPath="url(#lg-b)" />
+            <circle cx={46} cy={13} r={11} fill="none" stroke={color.ink} strokeWidth={encoding.ringWidth} />
+          </svg>
+        }
+      >
+        NODE FILL · ASSISTED SPLIT — EMPTY = SELF-CREATOR
+      </LegendRow>
+    </div>
+  );
+}
+
+function Reading({ text }: { text: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9, maxWidth: 330 }}>
+      <SectionMark>§C / READING</SectionMark>
+      <div
+        style={{
+          fontFamily: font.serif,
+          fontStyle: 'italic',
+          fontSize: type.reading.size,
+          lineHeight: type.reading.lineHeight,
+          color: color.text,
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
+
+function Origination({
+  rows,
+}: {
+  rows: Array<{ personId: number; name: string; share: number; label: string }>;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <SectionMark>§D / ORIGINATION</SectionMark>
+      {rows.map((row) => (
+        <div
+          key={row.personId}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            fontFamily: font.mono,
+            fontSize: type.legend.size,
+            letterSpacing: type.legend.letterSpacing,
+            color: color.text,
+          }}
+        >
+          <span style={{ width: 106 }}>{row.name.toUpperCase()}</span>
+          <span
+            style={{
+              width: 170,
+              height: 3,
+              background: color.track,
+              display: 'block',
+              position: 'relative',
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                bottom: 0,
+                background: color.rust,
+                opacity: 0.85,
+                width: `${row.share}%`,
+              }}
+            />
+          </span>
+          <span style={{ color: color.rustDeep }}>{row.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
