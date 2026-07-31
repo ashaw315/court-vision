@@ -8,6 +8,7 @@ import type {
   LineupSummary,
   ShotEvent,
 } from '@/lib/contracts';
+import { datasetManifest } from '@/lib/data/manifest';
 import { seasonScope, type SeasonScope } from '@/lib/data/scope';
 
 /**
@@ -374,5 +375,16 @@ export async function getPlayers() {
 export async function getSeasonScope(): Promise<SeasonScope> {
   const db = getDb();
   const rows = await db.select({ n: sql<number>`count(*)::int` }).from(games);
-  return seasonScope(Number(rows[0]?.n ?? 0));
+  const validated = Number(rows[0]?.n ?? 0);
+
+  // The schedule size and exclusion count come from the ETL's own run manifest, which
+  // ships with the tracked dataset. They are not in the database (they describe the RUN,
+  // not the data), and hardcoding "82 / 10" here would silently go stale the moment the
+  // season is regenerated.
+  const manifest = datasetManifest();
+  return seasonScope(
+    validated,
+    manifest?.gamesInSchedule ?? validated,
+    manifest ? manifest.gamesInSchedule - validated : 0,
+  );
 }

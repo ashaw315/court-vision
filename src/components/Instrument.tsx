@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { SpatialSignature } from '@/components/court/SpatialSignature';
 import { CreationNetwork } from '@/components/network/CreationNetwork';
 import type { GrainResponse } from '@/lib/contracts';
 import { selectConnection } from '@/lib/court/connection';
 import type { SeasonScope } from '@/lib/data/scope';
-import { playKey } from '@/lib/motion/play';
+import { COURT_SLIDE_MS, playKey } from '@/lib/motion/play';
 import { useReducedMotion } from '@/lib/motion/useReducedMotion';
 import { color, font, type } from '@/lib/design/tokens';
 import {
@@ -52,6 +52,34 @@ export function Instrument({
   const connection = selection
     ? selectConnection(data, selection.assisterId, selection.shooterId)
     : null;
+
+  /**
+   * Keep the court mounted briefly after it is cleared, so it can slide OUT.
+   *
+   * Unmounting on deselect would make the panel vanish instantly, which is not a
+   * transition — the brief says slides in AND out. `exiting` holds the last connection
+   * just long enough to play the exit, then drops it.
+   *
+   * Under reduced motion there is no exit to play, so the panel is dropped immediately.
+   */
+  const [exiting, setExiting] = useState<typeof connection>(null);
+  const previous = useRef(connection);
+
+  useEffect(() => {
+    const was = previous.current;
+    previous.current = connection;
+
+    if (was && !connection && animate) {
+      setExiting(was);
+      const timer = window.setTimeout(() => setExiting(null), COURT_SLIDE_MS);
+      return () => window.clearTimeout(timer);
+    }
+    setExiting(null);
+    return undefined;
+  }, [connection, animate]);
+
+  const shown = connection ?? exiting;
+  const isExiting = connection === null && exiting !== null;
 
   const handleSelect = (clicked: ConnectionSelection) => {
     setSelection((current) => toggleSelection(current, clicked));
@@ -104,21 +132,33 @@ export function Instrument({
           />
         </div>
 
-        {connection && (
-          <div style={{ flex: '1 1 560px', minWidth: 0 }}>
+        {shown && (
+          <div
+            style={{
+              flex: '1 1 560px',
+              minWidth: 0,
+              // Slide in on select, out on clear. Reduced motion gets neither — the panel
+              // simply is, or is not, there.
+              animation: animate
+                ? `${isExiting ? 'cv-slide-out' : 'cv-slide-in'} ${COURT_SLIDE_MS}ms `
+                  + 'cubic-bezier(0.22, 0.61, 0.36, 1) both'
+                : undefined,
+              pointerEvents: isExiting ? 'none' : undefined,
+            }}
+          >
             <SpatialSignature
               // Remounting on selection change restarts the bloom for the new shot set;
               // without it React would reuse the settled marks and nothing would animate.
               key={key}
-              connection={connection}
+              connection={shown}
               scope={scope}
-              animate={animate}
+              animate={animate && !isExiting}
             />
           </div>
         )}
       </div>
 
-      {!connection && <RestingHint />}
+      {!connection && !isExiting && <RestingHint />}
     </div>
   );
 }

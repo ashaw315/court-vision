@@ -25,6 +25,10 @@ export const SeasonScope = z.object({
   seasonType: z.string().min(1),
   /** Validated games in the dataset — what the totals are summed over. */
   games: z.number().int().nonnegative(),
+  /** Games in the full schedule (82). */
+  scheduledGames: z.number().int().nonnegative(),
+  /** Games excluded by validation (82 − 72 = 10). */
+  excludedGames: z.number().int().nonnegative(),
 });
 export type SeasonScope = z.infer<typeof SeasonScope>;
 
@@ -56,6 +60,36 @@ export function formatScope(scope: SeasonScope): string {
  * Callers pass the count from the database (see `getSeasonScope` in the query layer) so
  * this stays true if the dataset is ever regenerated with more or fewer valid games.
  */
-export function seasonScope(games: number): SeasonScope {
-  return { season: SEASON_LABEL, seasonType: SEASON_TYPE, games };
+export function seasonScope(
+  games: number,
+  scheduledGames = games,
+  excludedGames = Math.max(0, scheduledGames - games),
+): SeasonScope {
+  return {
+    season: SEASON_LABEL,
+    seasonType: SEASON_TYPE,
+    games,
+    scheduledGames,
+    excludedGames,
+  };
+}
+
+/**
+ * The methodology footnote.
+ *
+ * "72 games" is a surprising number next to an 82-game season, and an unexplained gap
+ * reads as a mistake. Naming the exclusion and its cause turns it into what it actually
+ * is — a validation result — and every figure comes from the data rather than a literal,
+ * so the sentence cannot go stale if the dataset is regenerated.
+ *
+ * Returns null when nothing was excluded: a footnote explaining a gap that does not exist
+ * would be noise.
+ */
+export function methodologyFootnote(scope: SeasonScope): string | null {
+  if (scope.excludedGames <= 0) return null;
+  const games = scope.excludedGames === 1 ? 'game' : 'games';
+  return (
+    `* ${scope.games} of ${scope.scheduledGames} games. ${scope.excludedGames} ${games} `
+    + 'excluded for contradictory source substitution timestamps — see methodology.'
+  );
 }

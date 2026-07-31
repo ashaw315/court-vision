@@ -16,7 +16,7 @@ import {
   type StrandBundle,
 } from '@/lib/network/model';
 import type { SeasonScope } from '@/lib/data/scope';
-import { formatScope } from '@/lib/data/scope';
+import { formatScope, methodologyFootnote } from '@/lib/data/scope';
 import {
   arcSequence,
   nodeSettleMs,
@@ -48,6 +48,12 @@ import {
  */
 
 const VIEW = network.viewBox;
+
+/**
+ * Dash length for the reveal mask. Comfortably longer than any arc in the viewBox, so the
+ * mask sweeps fully open regardless of the connection's length.
+ */
+const REVEAL_LENGTH = 1600;
 
 /** Node label placement: the design pushes labels away from the plate's centre column. */
 function labelAnchor(node: RoleNode): {
@@ -213,6 +219,7 @@ function ConnectionArc({
 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  const maskId = `reveal-${bundle.assisterId}-${bundle.shooterId}`;
 
   // Hover and keyboard focus both lift a connection out of the field so it reads as
   // clickable. Dimmed arcs stay visible as context — the unit's shape is still the point.
@@ -227,30 +234,50 @@ function ConnectionArc({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {bundle.strands.map((strand, i) => (
-        <path
-          key={i}
-          d={strand.d}
-          fill="none"
-          stroke={strand.color}
-          strokeWidth={emphasis ? strand.width * 1.9 : strand.width}
-          // While drawing, the hairline grows along its own path via dashoffset. The
-          // resting dash pattern (beads) is suspended for the draw and restored at the
-          // end, so the settled composition is byte-identical to the static plate.
-          strokeDasharray={draw ? '1000' : strand.dash}
-          strokeDashoffset={draw ? 1000 : undefined}
-          strokeLinecap="round"
-          opacity={emphasis ? Math.min(1, strand.opacity * 1.5) : strand.opacity}
-          markerEnd={strand.marker ? `url(#ah-${strand.marker})` : undefined}
-          style={
-            draw
-              ? {
+      {/*
+        The draw-in reveals each bundle through a MASK rather than by animating its own
+        `stroke-dasharray`.
+
+        Animating the dasharray was a regression: a dotted strand's pattern IS its
+        dasharray, so overwriting it to draw meant every faint connection rendered solid
+        for the duration — and with animation on by default, solid is what readers saw.
+        The mask leaves each strand's own dash pattern completely untouched, so a dotted
+        arc draws dotted and stays dotted.
+      */}
+      {draw && (
+        <defs>
+          <mask id={maskId} maskUnits="userSpaceOnUse">
+            <path
+              d={bundle.hitPath}
+              fill="none"
+              stroke="#fff"
+              strokeWidth={64}
+              strokeLinecap="round"
+              strokeDasharray={REVEAL_LENGTH}
+              strokeDashoffset={REVEAL_LENGTH}
+              style={{
                 animation: `cv-draw ${draw.duration}ms cubic-bezier(0.22, 0.61, 0.36, 1) ${draw.delay}ms both`,
-              }
-              : undefined
-          }
-        />
-      ))}
+              }}
+            />
+          </mask>
+        </defs>
+      )}
+
+      <g mask={draw ? `url(#${maskId})` : undefined}>
+        {bundle.strands.map((strand, i) => (
+          <path
+            key={i}
+            d={strand.d}
+            fill="none"
+            stroke={strand.color}
+            strokeWidth={emphasis ? strand.width * 1.9 : strand.width}
+            strokeDasharray={strand.dash}
+            strokeLinecap="round"
+            opacity={emphasis ? Math.min(1, strand.opacity * 1.5) : strand.opacity}
+            markerEnd={strand.marker ? `url(#ah-${strand.marker})` : undefined}
+          />
+        ))}
+      </g>
 
       {interactive && (
         <path
@@ -465,6 +492,7 @@ export function CreationNetwork({
                   without it a reader cannot tell one game from a whole season. */}
               <span style={{ color: color.rustDeep }}>
                 {formatScope(scope).toUpperCase()}
+                {methodologyFootnote(scope) && '\u2009*'}
               </span>
             </>
           )}
@@ -679,6 +707,21 @@ export function CreationNetwork({
           PLATE 1 / 2 — POSITION AS ROLE
         </div>
       </div>
+
+      {/* The methodology note. 72 next to an 82-game season reads as an error unless the
+          gap is named — stating it plainly is a credibility signal, not an apology. */}
+      {scope && methodologyFootnote(scope) && (
+        <div
+          style={{
+            marginTop: 10,
+            paddingTop: 9,
+            borderTop: `1px solid ${color.rule}`,
+            ...monoLabel(type.footer.size, type.footer.letterSpacing, color.muted),
+          }}
+        >
+          {methodologyFootnote(scope)}
+        </div>
+      )}
     </div>
   );
 }

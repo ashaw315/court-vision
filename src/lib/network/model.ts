@@ -269,6 +269,10 @@ export function buildStrands(
   const labels: ArcLabel[] = [];
   const bundles: StrandBundle[] = [];
 
+  // The scope's largest connection sets the top of the magnitude scale, so the leader
+  // always maxes out the strand count whatever the absolute shares happen to be.
+  const topShare = connections.reduce((max, c) => Math.max(max, c.share), 0);
+
   for (const connection of connections) {
     const from = byId.get(connection.assisterId);
     const to = byId.get(connection.shooterId);
@@ -291,17 +295,54 @@ export function buildStrands(
 
     const { share, isHighValue } = connection;
     const color = isHighValue ? colors.acid : colors.warm;
+
+    /**
+     * Two visual registers, and the split between them is the plate's first read:
+     *
+     *   DOMINANT (>= 6% share) — a solid woven bundle. These are the connections that
+     *     define the unit.
+     *   FAINT (< 6%) — one or two DOTTED hairlines that recede into texture. They are
+     *     real and shown, but they must not compete.
+     *
+     * Losing the dotted register (a Stage 3/4 regression) made every connection read as
+     * a similar solid strand and the plate turned into a knot.
+     */
     const dense = share >= encoding.denseMinShare;
-    // Strand count IS the share encoding: more share, more strands in the bundle.
-    const count = dense
-      ? Math.max(3, Math.min(13, Math.round(share / 2.1)))
-      : share >= 3 ? 2 : 1;
+
+    /**
+     * Strand count IS the magnitude encoding — the primary read.
+     *
+     * Scaled RELATIVE to this scope's largest connection rather than off an absolute
+     * share, and squared so the curve is convex. Absolute scaling collapsed the range: on
+     * the real top lineup a 14.1% connection drew 7 strands against 4 for an 8.2%, which
+     * no viewer can rank at a glance. Relative-and-convex gives the leader 18 against 9,
+     * so the dominant connection is visibly twice the next tier and the ranking is
+     * legible without reading a single label.
+     */
+    const relative = topShare > 0 ? share / topShare : 0;
+    const scaled = dense
+      ? Math.max(
+        encoding.denseMinStrands,
+        Math.round(
+          encoding.denseMinStrands
+            + relative * relative * (encoding.denseMaxStrands - encoding.denseMinStrands),
+        ),
+      )
+      : share >= encoding.faintPairShare ? 2 : 1;
+    // Dominant bundles carry an ODD number of strands so exactly one sits at the centre
+    // and takes the arrowhead. With an even count the midpoint falls between two strands
+    // and both would qualify, giving a connection two heads.
+    const count = dense && scaled % 2 === 0 ? scaled + 1 : scaled;
+
+    // Heavier bundles also spread wider, so magnitude reads as mass, not just line count.
+    const spread = dense ? weaveSpread * (1 + relative * 0.72) : weaveSpread;
+
     const bucket = isHighValue ? hot : dense ? ribbons : beads;
     const mid = (count - 1) / 2;
     const own: Strand[] = [];
 
     for (let j = 0; j < count; j += 1) {
-      const offset = bow + (j - mid) * weaveSpread;
+      const offset = bow + (j - mid) * spread;
       const qx = mx + dy * offset;
       const qy = my - dx * offset;
       const isCentre = Math.abs(j - mid) < 0.6;
@@ -309,8 +350,10 @@ export function buildStrands(
         d: `M${sx.toFixed(1)},${sy.toFixed(1)} Q${qx.toFixed(1)},${qy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`,
         color,
         width: dense ? 0.5 : 1.05,
+        // The dotted register. `none` is a solid stroke; the sparse pattern is what makes
+        // a faint connection read as delicate rather than thin-but-solid.
         dash: dense ? 'none' : '0.1 5.4',
-        opacity: dense ? (isHighValue ? 0.8 : 0.58) : isHighValue ? 0.78 : 0.55,
+        opacity: dense ? (isHighValue ? 0.8 : 0.58) : isHighValue ? 0.7 : 0.42,
         marker: isCentre ? (isHighValue ? 'acid' : 'warm') : null,
       };
       bucket.push(strand);

@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AssistEdge } from '@/lib/contracts';
-import { SEASON_LABEL, SEASON_TYPE, formatScope, seasonScope } from '@/lib/data/scope';
 import {
+  SEASON_LABEL,
+  SEASON_TYPE,
+  formatScope,
+  methodologyFootnote,
+  seasonScope,
+} from '@/lib/data/scope';
+import {
+  COURT_SLIDE_MS,
   NETWORK_DRAW_MS,
   NETWORK_STAGGER_MS,
   SHOT_STAGGER_CAP_MS,
@@ -83,12 +90,14 @@ describe('volume-order: the structure announces itself first', () => {
   });
 });
 
-describe('the play is quick, not hypnotic', () => {
-  it('completes a realistic 20-connection network within ~2.5s', () => {
-    // CLAUDE.md: delight once, then settle fast — this is studied repeatedly.
+describe('the play is deliberate, not hypnotic', () => {
+  it('runs long enough to read the build, short enough to settle', () => {
+    // Superseded the original "within 2.5s": at that pace the volume-order build was a
+    // blur, and the ordering is the one thing the animation exists to communicate. The
+    // upper bound still holds it to a single deliberate gesture.
     const total = networkPlayDurationMs(5, 20);
-    expect(total).toBeLessThanOrEqual(2500);
     expect(total).toBeGreaterThan(NETWORK_DRAW_MS);
+    expect(total).toBeLessThanOrEqual(3500);
   });
 
   it('caps the court stagger so a busy connection still blooms quickly', () => {
@@ -173,5 +182,67 @@ describe('scope line — every figure is a season total, and says so', () => {
     const lineupAppearances = 18;
     expect(seasonScope(seasonGames).games).toBe(seasonGames);
     expect(seasonScope(seasonGames).games).not.toBe(lineupAppearances);
+  });
+});
+
+describe('the draw-in is slow enough to perceive the volume order', () => {
+  it('takes 2.5–3.5s for a realistic network', () => {
+    // The whole point of the ordered build is that a viewer SEES heaviest-first. At the
+    // original 900ms pace the sequence blurred and the ordering was imperceptible.
+    const total = networkPlayDurationMs(5, 20);
+    expect(total).toBeGreaterThanOrEqual(2500);
+    expect(total).toBeLessThanOrEqual(3500);
+  });
+
+  it('gives each individual arc a visible draw, not a flicker', () => {
+    expect(NETWORK_DRAW_MS).toBeGreaterThanOrEqual(1200);
+  });
+
+  it('keeps the stagger, so arcs still arrive one after another', () => {
+    const sequence = arcSequence(
+      buildConnections([edge(1, 2, 30), edge(2, 3, 20), edge(3, 4, 10)]),
+      0,
+    );
+    expect(sequence[1].delay - sequence[0].delay).toBe(NETWORK_STAGGER_MS);
+    expect(NETWORK_STAGGER_MS).toBeGreaterThan(0);
+  });
+
+  it('slides the court quickly — it is a panel, not a reveal', () => {
+    expect(COURT_SLIDE_MS).toBeGreaterThan(0);
+    expect(COURT_SLIDE_MS).toBeLessThanOrEqual(500);
+  });
+});
+
+describe('the methodology footnote', () => {
+  it('states the real validated / scheduled / excluded counts', () => {
+    const note = methodologyFootnote(seasonScope(72, 82, 10))!;
+    expect(note).toContain('72 of 82');
+    expect(note).toContain('10 games');
+    expect(note).toMatch(/substitution timestamps/i);
+    expect(note).toMatch(/methodology/i);
+  });
+
+  it('derives the counts rather than hardcoding them', () => {
+    // Regenerating the dataset must change the sentence, not leave a stale literal.
+    const note = methodologyFootnote(seasonScope(60, 82, 22))!;
+    expect(note).toContain('60 of 82');
+    expect(note).toContain('22 games');
+    expect(note).not.toContain('72');
+  });
+
+  it('says nothing when no games were excluded', () => {
+    // A footnote explaining a gap that does not exist is noise.
+    expect(methodologyFootnote(seasonScope(82, 82, 0))).toBeNull();
+  });
+
+  it('reads grammatically for a single excluded game', () => {
+    const note = methodologyFootnote(seasonScope(81, 82, 1))!;
+    expect(note).toContain('1 game ');
+    expect(note).not.toContain('1 games');
+  });
+
+  it('defaults to no exclusion when only a validated count is known', () => {
+    expect(seasonScope(72).excludedGames).toBe(0);
+    expect(methodologyFootnote(seasonScope(72))).toBeNull();
   });
 });

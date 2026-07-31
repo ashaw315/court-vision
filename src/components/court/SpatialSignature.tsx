@@ -11,7 +11,7 @@ import {
 } from '@/lib/court/geometry';
 import { buildSpatialReading, type ConnectionShots } from '@/lib/court/connection';
 import type { SeasonScope } from '@/lib/data/scope';
-import { formatScope } from '@/lib/data/scope';
+import { formatScope, methodologyFootnote } from '@/lib/data/scope';
 import { SHOT_BLOOM_MS, shotBloomDelay } from '@/lib/motion/play';
 import { formatShare } from '@/lib/network/model';
 
@@ -281,7 +281,10 @@ export function SpatialSignature({
             {' · '}
             {/* The basket and point counts above are season totals; without this a
                 reader cannot tell them from a single game's. */}
-            <span style={{ color: color.muted }}>{formatScope(scope).toUpperCase()}</span>
+            <span style={{ color: color.muted }}>
+              {formatScope(scope).toUpperCase()}
+              {methodologyFootnote(scope) && '\u2009*'}
+            </span>
           </>
         )}
       </div>
@@ -380,6 +383,21 @@ export function SpatialSignature({
         <span>PAIRS WITH FIG. 12b — CREATION NETWORK</span>
         <span>COURT VISION NETWORK · PLATE 2 / 2 — SPATIAL SIGNATURE</span>
       </div>
+
+      {/* Same methodology note as the network plate — the counts above are season totals
+          over the validated subset, and the gap to 82 needs naming wherever it appears. */}
+      {scope && methodologyFootnote(scope) && (
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: type.footer.size,
+            letterSpacing: type.footer.letterSpacing,
+            color: color.muted,
+          }}
+        >
+          {methodologyFootnote(scope)}
+        </div>
+      )}
     </div>
   );
 }

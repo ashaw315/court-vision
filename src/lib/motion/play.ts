@@ -15,13 +15,23 @@ import type { Connection } from '@/lib/network/model';
  *      immediately. Not "a shorter animation" — none.
  */
 
-/** Total draw-in budget. Quick by design — this is studied repeatedly, so it settles fast. */
-export const NETWORK_DRAW_MS = 900;
+/**
+ * How long a single arc takes to draw.
+ *
+ * Slowed from the original 900ms: the point of the volume-order build is that a viewer
+ * SEES the heaviest connection arrive first and the lighter ones cascade after it. At the
+ * previous pace the whole sequence blurred into a single flicker and the ordering — the
+ * one thing the animation exists to communicate — was imperceptible.
+ */
+export const NETWORK_DRAW_MS = 1500;
 /** Gap between successive arcs starting. Total ≈ NETWORK_DRAW_MS + stagger × (n − 1). */
-export const NETWORK_STAGGER_MS = 55;
+export const NETWORK_STAGGER_MS = 62;
 /** Nodes land before the arcs that connect them. */
 export const NODE_FADE_MS = 340;
 export const NODE_STAGGER_MS = 45;
+
+/** How long the court panel takes to slide in beside the network. */
+export const COURT_SLIDE_MS = 320;
 
 /** Court bloom: quicker still — the court is a detail view, not a reveal. */
 export const SHOT_BLOOM_MS = 260;

@@ -106,8 +106,20 @@ export const network = {
 export const encoding = {
   /** Below this share of unit creation, a connection carries no % label. */
   labelMinShare: 7,
-  /** At or above this share, a bundle is drawn as dense ribbons rather than beads. */
+  /**
+   * At or above this share a connection is DOMINANT: a solid woven bundle. Below it the
+   * connection is FAINT and draws as dotted hairlines that recede into texture.
+   */
   denseMinShare: 6,
+  /** A faint connection at or above this share gets two hairlines instead of one. */
+  faintPairShare: 3,
+  /**
+   * Strand-count range for dominant bundles. The span is deliberately wide — this is the
+   * plate's primary magnitude read, and a narrow range makes connections unrankable at a
+   * glance.
+   */
+  denseMinStrands: 4,
+  denseMaxStrands: 18,
   /** Node fill opacity. */
   fillOpacity: 0.82,
   /** Node ring. */
