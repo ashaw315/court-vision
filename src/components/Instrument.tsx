@@ -3,11 +3,18 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { SpatialSignature } from '@/components/court/SpatialSignature';
+import { InfoPanel, InfoTab } from '@/components/InfoPanel';
 import { CreationNetwork } from '@/components/network/CreationNetwork';
 import type { GrainResponse } from '@/lib/contracts';
 import { selectConnection } from '@/lib/court/connection';
 import type { SeasonScope } from '@/lib/data/scope';
 import { COURT_SLIDE_MS, playKey } from '@/lib/motion/play';
+import {
+  collapsePanel,
+  initialPanelState,
+  onSelectionChange,
+  openPanel,
+} from '@/lib/panel/state';
 import { useReducedMotion } from '@/lib/motion/useReducedMotion';
 import { color, font, type } from '@/lib/design/tokens';
 import {
@@ -65,6 +72,19 @@ export function Instrument({
   // Non-negotiable: a reader who asked for reduced motion gets the settled plates with no
   // draw-in and no bloom. This also governs the server render, where the hook reports
   // `true` and the first paint is therefore static.
+  /**
+   * The reading guide sits in the empty space beside the network at rest, and stands aside
+   * when the court is summoned. Adjusted during render off the selection transition rather
+   * than in an effect — an effect would paint one frame with both panels fighting.
+   */
+  const [panel, setPanel] = useState(initialPanelState);
+  const [panelSawSelection, setPanelSawSelection] = useState(selection !== null);
+  const hasSelection = selection !== null;
+  if (panelSawSelection !== hasSelection) {
+    setPanel(onSelectionChange(panel, panelSawSelection, hasSelection));
+    setPanelSawSelection(hasSelection);
+  }
+
   const reducedMotion = useReducedMotion();
   const animate = !reducedMotion;
 
@@ -167,7 +187,28 @@ export function Instrument({
           padding: '0 clamp(0px, 1vw, 16px)',
         }}
       >
-        <div style={{ flex: connection ? '1 1 640px' : '1 1 100%', minWidth: 0 }}>
+        {panel.open ? (
+          <div
+            style={{
+              flex: connection ? '0 1 330px' : '0 1 360px',
+              minWidth: 0,
+              // Reduced motion gets no slide — the guide simply is, or is not, there.
+              animation: animate
+                ? `cv-slide-in ${COURT_SLIDE_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1) both`
+                : undefined,
+            }}
+          >
+            <InfoPanel
+              grain={data.scope.grain}
+              scope={scope}
+              onCollapse={() => setPanel(collapsePanel(panel))}
+            />
+          </div>
+        ) : (
+          <InfoTab onOpen={() => setPanel(openPanel(panel, hasSelection))} />
+        )}
+
+        <div style={{ flex: connection ? '1 1 560px' : '1 1 620px', minWidth: 0 }}>
           <CreationNetwork
             // Keyed on the LINEUP only, not the selection: selecting a connection must
             // dim the field, not replay the whole draw-in. A lineup change (Stage 5)
