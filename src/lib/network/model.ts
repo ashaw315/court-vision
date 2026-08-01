@@ -1,7 +1,7 @@
 import { scaleLinear } from 'd3-scale';
 
 import type { AssistEdge, GrainResponse } from '@/lib/contracts';
-import { encoding, network } from '@/lib/design/tokens';
+import { color as palette, encoding, network } from '@/lib/design/tokens';
 
 /**
  * Turns a `GrainResponse` into everything the Creation Network plate draws.
@@ -465,8 +465,15 @@ export function buildStrands(
         width: dense ? 0.5 : 1.05,
         // The dotted register. `none` is a solid stroke; the sparse pattern is what makes
         // a faint connection read as delicate rather than thin-but-solid.
-        dash: dense ? 'none' : '0.1 5.4',
-        opacity: dense ? (isHighValue ? 0.8 : 0.58) : isHighValue ? 0.7 : 0.42,
+        //
+        // Legibility tuning: the design's '0.1 5.4' dash is a 0.1px dot every 5.4px, which
+        // at 0.42 opacity was imperceptible on a bone ground. The fix is a longer dot and a
+        // tighter gap — MORE INK, not more colour. Pushing opacity alone (tried at 0.6) made
+        // the dotted arcs read as bold red lines competing with the solid bundles, which
+        // inverts the magnitude encoding. 0.5 with the denser dash reads as delicate
+        // texture that is clearly present and still clearly subordinate.
+        dash: dense ? 'none' : '0.5 3.4',
+        opacity: dense ? (isHighValue ? 0.85 : 0.7) : isHighValue ? 0.62 : 0.5,
         marker: isCentre ? (isHighValue ? 'acid' : 'warm') : null,
       };
       bucket.push(strand);
@@ -505,7 +512,10 @@ export function buildStrands(
         x: px + dy * side * 13,
         y: py - dx * side * 13 + 3,
         text: formatShare(Math.round(share * 10) / 10),
-        color: isHighValue ? '#7C8C0A' : '#8A3520',
+        // Read from the tokens rather than repeating the hexes: these literals predated
+        // the token audit, so darkening acidDeep/rustDeep for legibility silently skipped
+        // the arc labels — the one place the % is actually data.
+        color: isHighValue ? palette.acidDeep : palette.rustDeep,
         assisterId: connection.assisterId,
         shooterId: connection.shooterId,
       });

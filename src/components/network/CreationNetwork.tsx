@@ -898,7 +898,9 @@ function Origination({
                 top: 0,
                 bottom: 0,
                 background: color.rust,
-                opacity: 0.85,
+                // Full strength against the darkened track — at 0.85 on the old near-white
+                // track a short bar was barely distinguishable from its own groove.
+                opacity: 1,
                 width: `${row.share}%`,
               }}
             />

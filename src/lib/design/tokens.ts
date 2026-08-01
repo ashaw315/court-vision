@@ -24,20 +24,44 @@ export const color = {
   rustDeep: '#8A3520',
   /** Body/annotation text. */
   text: '#4A4438',
-  /** Mono label grey. */
-  muted: '#7C7261',
-  /** Lighter mono grey — section markers, axis captions. */
-  mutedLight: '#9A8F7B',
-  /** Hairlines and rules. */
-  rule: '#C9C0AC',
+  /**
+   * Mono label grey. Darkened from the design's #7C7261 (4.05:1 on the bone ground — below
+   * AA for the 8.5–11px mono this colour is used for). 4.85:1 now, deliberately kept just
+   * UNDER rust's 5.10 so annotation never out-weighs the accent.
+   */
+  muted: '#6E6657',
+  /**
+   * Lighter mono grey — section markers, axis captions. The worst offender in the audit at
+   * 2.73:1: legible on the designer's display, not on real ones. 4.64:1 now, still the
+   * lightest text tone so the hierarchy is unchanged.
+   */
+  mutedLight: '#71695A',
+  /**
+   * Hairlines and rules. Darkened from #C9C0AC (1.55:1). Structure, not text, so it stays
+   * well below the text tones — but the plate's rules were disappearing entirely.
+   */
+  rule: '#B0A896',
   /** Court/structure lines, node fill hairline. */
   structure: '#6E6555',
-  /** Empty track behind origination bars. */
-  track: '#E2DAC7',
-  /** The acid accent. Rare by design — highest-value connections only. */
+  /**
+   * Empty track behind origination bars. Darkened from #E2DAC7 (1.19:1 — invisible) so the
+   * bar's full extent reads and a short bar is legible as a proportion. It must stay well
+   * below the rust bar it sits behind, so this is tuned by eye against the bar rather than
+   * pushed to a text-grade ratio.
+   */
+  track: '#B5AC97',
+  /**
+   * The acid accent. Rare by design — highest-value connections only.
+   *
+   * HUE AND MEANING UNCHANGED: this is the shot-value encoding. Only text-weight variants
+   * below are adjusted, never this mark fill.
+   */
   acid: '#A9BE12',
-  /** Darker acid, for acid-coloured text (contrast on the light ground). */
-  acidDeep: '#7C8C0A',
+  /**
+   * Darker acid, for acid-coloured text (contrast on the light ground). Same hue, deepened
+   * from #7C8C0A (3.20:1) to clear AA where it labels data.
+   */
+  acidDeep: '#637008',
 } as const;
 
 /**

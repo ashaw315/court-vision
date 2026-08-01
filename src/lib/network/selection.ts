@@ -90,7 +90,20 @@ export function isNodeDimmed(
 }
 
 /** Opacity multiplier for receded elements. Low enough to recede, high enough to read. */
-export const DIM_OPACITY = 0.16;
+/**
+ * How far unselected connections recede when one is selected.
+ *
+ * Raised from 0.16: at that value the ghost network was effectively erased, so selecting a
+ * connection destroyed the context that makes it meaningful — you could no longer see the
+ * shape the highlighted arc sits inside.
+ *
+ * This value MULTIPLIES with each strand's own opacity, which is the trap: a faint dotted
+ * strand at 0.5 dimmed to 0.16 rendered at 0.08 effective — invisible. At 0.45 that same
+ * faint strand lands near 0.22, which reads as a genuine ghost, while a solid dominant
+ * bundle (0.85) dims to ~0.38 and still sits clearly behind the selected arc at full
+ * strength.
+ */
+export const DIM_OPACITY = 0.45;
 
 /** Screen-reader/tooltip label for a connection's interactive target. */
 export function connectionLabel(

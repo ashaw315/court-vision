@@ -130,8 +130,21 @@ describe('emphasis and dimming', () => {
 
   it('recedes without disappearing', () => {
     // Dimmed arcs must stay legible as context — the field is still the unit's shape.
-    expect(DIM_OPACITY).toBeGreaterThan(0);
-    expect(DIM_OPACITY).toBeLessThan(0.4);
+    //
+    // The old bound was `> 0` && `< 0.4`, which only enforced the "recedes" half: 0.16
+    // satisfied it while rendering the ghost network effectively invisible. The floor now
+    // has teeth, because this value MULTIPLIES with each strand's own opacity.
+    expect(DIM_OPACITY).toBeGreaterThanOrEqual(0.35);
+    // Still clearly subordinate to a selected arc at full strength.
+    expect(DIM_OPACITY).toBeLessThan(0.6);
+  });
+
+  it('leaves the faintest dimmed strand perceptible once opacities multiply', () => {
+    // The real legibility floor: a faint dotted strand draws at 0.5, and the group dim
+    // multiplies on top of it. At the old 0.16 that produced 0.08 — invisible on the bone
+    // ground, which is precisely the defect this pass fixed.
+    const FAINTEST_STRAND_OPACITY = 0.5;
+    expect(DIM_OPACITY * FAINTEST_STRAND_OPACITY).toBeGreaterThan(0.18);
   });
 
   it('moves emphasis when the selection changes', () => {
