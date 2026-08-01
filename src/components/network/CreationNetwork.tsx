@@ -89,11 +89,21 @@ function NodeMark({
   node,
   dimmed,
   fadeDelay,
+  isFocal = false,
+  nullSplitLabel = 'NO MADE BASKETS',
 }: {
   node: RoleNode;
   dimmed: boolean;
   /** ms delay for the land-in, or null to render settled. */
   fadeDelay: number | null;
+  /** True for the subject of a player-grain plate — the hub the view is about. */
+  isFocal?: boolean;
+  /**
+   * What to print when the assisted split is null. On a player plate that is every
+   * teammate, so the per-node text is dropped entirely and the legend carries the
+   * explanation once — nine repetitions of the same caveat is noise, not honesty.
+   */
+  nullSplitLabel?: string;
 }) {
   const R = network.nodeRadius;
   const anchor = labelAnchor(node);
@@ -154,6 +164,23 @@ function NodeMark({
         stroke={color.ink}
         strokeWidth={encoding.ringWidth}
       />
+      {/*
+        The subject of a player plate gets one quiet concentric ring — the same ink, a
+        hairline, held off the node so it reads as an annotation rather than a thicker
+        border. Enough to say "this one is the subject" without introducing a colour or
+        shouting; the radial layout already does most of that work.
+      */}
+      {isFocal && (
+        <circle
+          cx={node.x}
+          cy={node.y}
+          r={R + 7}
+          fill="none"
+          stroke={color.ink}
+          strokeWidth={0.5}
+          opacity={0.5}
+        />
+      )}
 
       <text
         x={anchor.tx}
@@ -192,8 +219,15 @@ function NodeMark({
           letterSpacing: type.nodeReadout.letterSpacing,
         }}
       >
+        {/*
+          A null split is not "zero assisted" — it means this scope holds no made baskets
+          for that player, so their split is unknown HERE. On a player plate the payload
+          carries only the subject's own shots, so every teammate reads null; saying "NO
+          MADE BASKETS" flatly implied Claxton (300 baskets on the season) had none. Naming
+          the scope keeps the statement true without hiding anything.
+        */}
         {node.assistedPct === null
-          ? 'NO MADE BASKETS'
+          ? nullSplitLabel
           : `${formatPct(node.assistedPct)} ASSISTED`}
       </text>
     </g>
@@ -392,7 +426,14 @@ export function CreationNetwork({
   const nameById = new Map(data.players.map((player) => [player.personId, player.displayName]));
   const interactive = typeof onSelectConnection === 'function';
   const origination = buildOrigination(nodes, fullScope ?? data);
-  const reading = buildReading(connections, nodes);
+
+  // The subject of a player-grain plate. Null for team and lineup, where there is no hub
+  // and every node is peer to the rest.
+  const focalId = data.scope.grain === 'player' && data.scope.id !== null
+    ? Number(data.scope.id)
+    : null;
+  // Same unthinned scope §D uses, so the two quote one denominator.
+  const reading = buildReading(connections, nodes, fullScope ?? data);
 
   /**
    * The play is a pure render-time decision, not a state machine.
@@ -457,7 +498,7 @@ export function CreationNetwork({
           ...monoLabel(type.header.size, type.header.letterSpacing, color.muted),
         }}
       >
-        <span>FIG. 12b — CREATION NETWORK · {SUBJECT[data.scope.grain]} · POSITION AS ROLE</span>
+        <span>FIG. 12b — CREATION NETWORK · {SUBJECT[data.scope.grain]} · {focalId === null ? 'POSITION AS ROLE' : 'SUBJECT AT CENTRE'}</span>
         <span style={{ whiteSpace: 'nowrap' }}>N.º 0034 · 05 · CVN · MMXXVI</span>
       </div>
 
@@ -493,7 +534,9 @@ export function CreationNetwork({
             paddingBottom: 4,
           }}
         >
-          arranged by role —<br />creators above, scorers below
+          {focalId === null
+            ? <>arranged by role —<br />creators above, scorers below</>
+            : <>one player at the centre —<br />who creates for them, who they create for</>}
         </div>
         <div style={{ flex: 1 }} />
         <div
@@ -503,7 +546,16 @@ export function CreationNetwork({
             ...monoLabel(type.headerNote.size, type.headerNote.letterSpacing, color.muted),
           }}
         >
-          VERTICAL AXIS · CREATION ORIGINATED
+          {/*
+            The band's y-scale is driven by roleBalance (originated MINUS received), not by
+            origination — so "CREATION ORIGINATED" was imprecise on team/lineup. On the
+            player hub, vertical position carries no measure at all: the subject is the #1
+            originator in their own scope yet sits 9th from the top, so the old label was
+            simply false there.
+          */}
+          {focalId === null
+            ? 'VERTICAL AXIS · CREATOR-TO-SCORER BALANCE'
+            : 'ARCS RADIATE FROM THE SUBJECT'}
           <br />
           {/*
             Shares are computed over the arcs actually drawn, so on a thinned plate they
@@ -518,7 +570,7 @@ export function CreationNetwork({
               {/* Every figure on this plate is a season total. Saying so is the point —
                   without it a reader cannot tell one game from a whole season. */}
               <span style={{ color: color.rustDeep }}>
-                {formatScope(scope).toUpperCase()}
+                {formatScope(scope, data.meta.games).toUpperCase()}
                 {methodologyFootnote(scope) && '\u2009*'}
               </span>
             </>
@@ -621,7 +673,7 @@ export function CreationNetwork({
                 letterSpacing: type.axisCaption.letterSpacing,
               }}
             >
-              ORIGINATES CREATION
+              {focalId === null ? 'ORIGINATES CREATION' : 'CREATES FOR THE SUBJECT'}
             </text>
             <text
               x={network.axisLeft}
@@ -633,7 +685,7 @@ export function CreationNetwork({
                 letterSpacing: type.axisCaption.letterSpacing,
               }}
             >
-              RECEIVES CREATION
+              {focalId === null ? 'RECEIVES CREATION' : 'SCORES OFF THE SUBJECT'}
             </text>
           </g>
 
@@ -702,6 +754,8 @@ export function CreationNetwork({
                 node={node}
                 dimmed={isNodeDimmed(selection, node.personId)}
                 fadeDelay={playing ? nodeIndex.get(node.personId) ?? 0 : null}
+                isFocal={node.personId === focalId}
+                nullSplitLabel={focalId === null ? 'NO MADE BASKETS' : ''}
               />
             ))}
           </g>
@@ -720,7 +774,7 @@ export function CreationNetwork({
           gap: 'clamp(24px, 4vw, 60px)',
         }}
       >
-        <Encoding />
+        <Encoding focalId={focalId} densityNote={densityNote} />
         <Reading text={reading} />
         <Origination rows={origination} />
         <div style={{ flex: 1 }} />
@@ -733,7 +787,7 @@ export function CreationNetwork({
         >
           COURT VISION NETWORK
           <br />
-          PLATE 1 / 2 — POSITION AS ROLE
+          PLATE 1 / 2 — {focalId === null ? 'POSITION AS ROLE' : 'SUBJECT AT CENTRE'}
         </div>
       </div>
 
@@ -790,7 +844,12 @@ function LegendRow({ children, swatch }: { children: React.ReactNode; swatch: Re
   );
 }
 
-function Encoding() {
+function Encoding({ focalId, densityNote }: {
+  /** The player-grain subject, or null on team/lineup. Changes what an empty node means. */
+  focalId: number | null;
+  /** Set when the plate is thinned — then arc shares are of the drawn arcs, not the scope. */
+  densityNote: string | null;
+}) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
       <SectionMark>§B / ENCODING</SectionMark>
@@ -805,7 +864,13 @@ function Encoding() {
           </svg>
         }
       >
-        DENSITY · SHARE OF UNIT CREATION
+        {/*
+          On a thinned plate the share is of the arcs DRAWN, not of the scope's season — the
+          same connection reads 16.7% on the team plate but is 5.2% of the Nets' actual
+          assisted creation. Naming the denominator is the difference between a share and a
+          claim.
+        */}
+        DENSITY · SHARE OF {densityNote ? 'CREATION SHOWN' : 'UNIT CREATION'}
       </LegendRow>
 
       <LegendRow
@@ -835,7 +900,15 @@ function Encoding() {
           </svg>
         }
       >
-        NODE FILL · ASSISTED SPLIT — EMPTY = SELF-CREATOR
+        {/*
+          "EMPTY = SELF-CREATOR" is true on a team or lineup plate, where an empty node means
+          the player made baskets and none were assisted. It is FALSE on a player plate: the
+          payload holds only the subject's shots, so a teammate's empty node means their
+          split is not measurable in this view, not that they self-create.
+        */}
+        NODE FILL · ASSISTED SPLIT — EMPTY = {focalId === null
+          ? 'SELF-CREATOR'
+          : 'NOT MEASURABLE HERE'}
       </LegendRow>
     </div>
   );

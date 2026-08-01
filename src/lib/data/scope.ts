@@ -49,8 +49,12 @@ export const SEASON_TYPE = 'Regular Season';
  * Uppercased at the call site by the mono label styling, so the string itself stays
  * readable in tests and screen-reader output.
  */
-export function formatScope(scope: SeasonScope): string {
-  const games = `${scope.games} ${scope.games === 1 ? 'game' : 'games'}`;
+export function formatScope(scope: SeasonScope, scopeGames?: number): string {
+  // `scopeGames` is how many games THIS plate's data actually spans. Without it every plate
+  // printed the season constant, so a lineup that played 18 games was captioned "72 GAMES"
+  // and its 26 baskets read as a 72-game rate.
+  const count = scopeGames ?? scope.games;
+  const games = `${count} ${count === 1 ? 'game' : 'games'}`;
   return `${scope.season} ${scope.seasonType} · ${games}`;
 }
 

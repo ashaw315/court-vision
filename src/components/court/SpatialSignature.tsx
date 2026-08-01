@@ -177,6 +177,9 @@ export function SpatialSignature({
   // rather than clamped to the edge — a mark at the crop line would assert a location the
   // shot does not have. That exclusion now happens once, in `selectConnection`, so the
   // marks, the caption count, the tally and the §F reading all describe the SAME shots.
+  // Distinct games these baskets span — the honest denominator for this plate's caption.
+  const connectionGames = new Set(connection.shots.map((shot) => shot.gameId)).size;
+
   const visible = connection.shots;
   const clipped = connection.clipped;
 
@@ -281,7 +284,8 @@ export function SpatialSignature({
             {/* The basket and point counts above are season totals; without this a
                 reader cannot tell them from a single game's. */}
             <span style={{ color: color.muted }}>
-              {formatScope(scope).toUpperCase()}
+              {/* This plate shows ONE connection, so its span is that connection's games. */}
+              {formatScope(scope, connectionGames).toUpperCase()}
               {methodologyFootnote(scope) && '\u2009*'}
             </span>
           </>

@@ -265,6 +265,29 @@ export function buildRoleNodes(response: GrainResponse): RoleNode[] {
 
   const ranked = [...players].sort((a, b) => b.originatedShare - a.originatedShare);
 
+  /**
+   * The player grain is a HUB, so it is laid out as one.
+   *
+   * Measured on the real data: in a player scope every edge touches the focal player and
+   * every other node has a two-way relationship with them. The role-band layout ignored
+   * that — it spread teammates by role balance, but their balances cluster inside a
+   * ~0.1 span (0.01–0.12 for Porter Jr.) while the focal player sits far outside it at
+   * −0.33. The result was nine nodes crushed into one horizontal lane, labels overprinting,
+   * and most of the plate's vertical space unused.
+   *
+   * Placing the subject at the centre and radiating their relationships around them is the
+   * honest shape of this data, and it is what makes the player plate read as being ABOUT
+   * someone rather than as a team plate with fewer names.
+   */
+  const focalId = focalPersonId(response);
+  const focal = focalId === null
+    ? undefined
+    : players.find((player) => player.personId === focalId);
+
+  if (focal) {
+    return radialAroundFocal(players, focal, ranked);
+  }
+
   const placed = players.map((player) => {
     const roleRank = byRole.findIndex((p) => p.personId === player.personId);
     const originRank = ranked.findIndex((p) => p.personId === player.personId);
@@ -276,6 +299,120 @@ export function buildRoleNodes(response: GrainResponse): RoleNode[] {
     };
   });
 
+  return separateLabels(placed);
+}
+
+/**
+ * The subject of a player-grain plate, or null for team and lineup.
+ *
+ * The grain check is load-bearing and is asserted, not assumed. A lineup's `scope.id` is a
+ * group string like "-1-2-3-4-5-", so `Number()` yields NaN and could never match a
+ * personId — meaning the radial branch happens to be unreachable for lineups even without
+ * the grain test. Relying on that would be relying on an accident of the id format; one
+ * grain whose id is numeric would silently turn the plate into a hub.
+ */
+export function focalPersonId(response: GrainResponse): number | null {
+  if (response.scope.grain !== 'player' || response.scope.id === null) return null;
+  const id = Number(response.scope.id);
+  return Number.isFinite(id) ? id : null;
+}
+
+/**
+ * Focal-centric layout: the subject at the hub, their relationships radiating.
+ *
+ * Role meaning is preserved through ANGLE rather than raw height — a teammate who creates
+ * for the focal player more than they score off them sits in the upper arc, a net receiver
+ * in the lower arc. So "creators above, receivers below" still holds; it is simply read
+ * around a centre instead of across a band.
+ *
+ * Teammates are ordered by role balance and swept across an arc, which distributes the
+ * cluster the band layout collapsed: equal angular spacing guarantees separation regardless
+ * of how tightly the underlying balances bunch.
+ */
+function radialAroundFocal(
+  players: Array<Omit<RoleNode, 'x' | 'y' | 'index'>>,
+  focal: Omit<RoleNode, 'x' | 'y' | 'index'>,
+  ranked: Array<Omit<RoleNode, 'x' | 'y' | 'index'>>,
+): RoleNode[] {
+  const cx = network.viewBox.width / 2;
+  const cy = (network.originatesY + network.receivesY) / 2;
+
+  const others = players
+    .filter((player) => player.personId !== focal.personId)
+    // Most creator-ish first, so the sweep runs top (creates for the subject) to bottom.
+    .sort((a, b) => b.roleBalance - a.roleBalance);
+
+  // The ring is an ellipse: the plate is far wider than it is tall, so a circle would waste
+  // the horizontal room the band layout at least used.
+  const rx = network.viewBox.width / 2 - 150;
+  // Slightly tighter than the full band height: node labels sit BELOW the lowest nodes and
+  // ABOVE the highest, so a ring drawn to the exact band edges pushes its own captions past
+  // the axis rules.
+  const ry = (network.receivesY - network.originatesY) / 2 - 30;
+
+  const indexOf = (personId: number) =>
+    String(ranked.findIndex((p) => p.personId === personId) + 1).padStart(2, '0');
+
+  const placed: RoleNode[] = [
+    { ...focal, x: cx, y: cy, index: indexOf(focal.personId) },
+  ];
+
+  // Role decides the HEMISPHERE, rank decides the position within it.
+  //
+  // Sweeping purely by rank was wrong: it could drop a net creator into the lower arc, which
+  // silently inverts the plate's one stated encoding ("creators above, scorers below"). So
+  // net creators fill the upper arc and net receivers the lower one, each spread across its
+  // own span and alternating left/right so consecutive ranks never sit adjacent.
+  //
+  // Arcs are inset from the poles and never touch the equator: without the inset the first
+  // left and right nodes stacked at the very top, and a node exactly on the equator rendered
+  // level with the hub despite having a real, non-zero role balance.
+  // Fractions of a HALF-turn. A hemisphere spans t in [0, 0.5]: at 0.5 the node is exactly
+  // level with the hub, so the arc must stop short of it or "above/below" stops being true.
+  const POLE_INSET = 0.08;
+  const EQUATOR_INSET = 0.10;
+
+  const creators = others.filter((player) => player.roleBalance > 0);
+  const receivers = others.filter((player) => player.roleBalance <= 0);
+
+  const place = (group: typeof others, upper: boolean) => {
+    group.forEach((player, i) => {
+      const onLeft = i % 2 === 1;
+      const rank = Math.floor(i / 2);
+      const perSide = Math.max(1, Math.ceil((group.length - (onLeft ? 1 : 0)) / 2));
+
+      // 0 = nearest the pole, 1 = nearest the equator — scaled into the half-turn the
+      // hemisphere actually owns, never reaching the equator itself.
+      //
+      // A lopsided scope (every teammate a net creator, which is common: the subject is
+      // usually the one being created FOR) would otherwise crowd one hemisphere and leave
+      // the other empty. When a hemisphere holds everyone it is allowed to reach past the
+      // equator into the vacant side, so the ring still uses the whole plate. Role order is
+      // preserved either way — this only affects how far the arc is permitted to sweep.
+      const ownsWholeRing = group.length === others.length;
+      const span = (ownsWholeRing ? 1 : 0.5) - POLE_INSET - EQUATOR_INSET;
+      const t = perSide <= 1 ? 0.5 : rank / (perSide - 1);
+      const fromPole = POLE_INSET + t * span;
+
+      // Measured from the top pole for creators, the bottom pole for receivers.
+      const angle = upper
+        ? -Math.PI / 2 + fromPole * Math.PI * (onLeft ? -1 : 1)
+        : Math.PI / 2 - fromPole * Math.PI * (onLeft ? -1 : 1);
+
+      placed.push({
+        ...player,
+        x: cx + Math.cos(angle) * rx,
+        y: cy + Math.sin(angle) * ry,
+        index: indexOf(player.personId),
+      });
+    });
+  };
+
+  place(creators, true);
+  place(receivers, false);
+
+  // The ring spacing already separates the nodes; this only catches the rare pair whose
+  // label blocks still meet, and leaves everything else exactly on the ring.
   return separateLabels(placed);
 }
 
@@ -577,6 +714,12 @@ export function buildOrigination(nodes: RoleNode[], scope?: GrainResponse) {
 export function buildReading(
   connections: Connection[],
   nodes: RoleNode[],
+  /**
+   * The FULL grain response, before density thinning. Supplied so the origination figure
+   * quoted here uses the same denominator as the §D bars beside it; without it §C fell back
+   * to the drawn-subgraph share and contradicted §D by 2.1x on a thinned team plate.
+   */
+  scope?: GrainResponse,
 ): string {
   if (connections.length === 0 || nodes.length === 0) {
     return 'No assisted creation recorded for this unit.';
@@ -609,21 +752,42 @@ export function buildReading(
 
   const sentences: string[] = [];
 
-  sentences.push(
-    `Creation is ${character}: the top three connections carry ${formatShare(Math.round(topThree * 10) / 10)} `
-      + `of everything this unit assists, led by ${creator} to ${scorer} at ${formatShare(Math.round(top.share * 10) / 10)}.`,
-  );
+  // "this unit" is accurate for a five-man lineup and for the roster, but a player scope is
+  // one player plus the teammates they exchange creation with — calling that a unit misnames
+  // the subject.
+  const subject = scope?.scope.grain === 'player'
+    ? 'these connections'
+    : 'this unit';
 
   sentences.push(
-    `${leadCreator.name} originates ${formatPct(leadCreator.originatedShare)} of it.`,
+    `Creation is ${character}: the top three connections carry ${formatShare(Math.round(topThree * 10) / 10)} `
+      + `of everything ${subject === 'this unit' ? 'this unit assists' : 'shown here'}, `
+      + `led by ${creator} to ${scorer} at ${formatShare(Math.round(top.share * 10) / 10)}.`,
   );
+
+  // Quote the SAME figure §D renders. `buildOrigination` measures against the unthinned
+  // scope; reading `leadCreator.originatedShare` here measured against the drawn subgraph,
+  // so the two disagreed on a capped plate while using the same word, "originates".
+  const originationRows = buildOrigination(nodes, scope);
+  const leadRow = originationRows[0];
+  if (leadRow) {
+    sentences.push(
+      `${leadRow.name} originates ${formatShare(Math.round(leadRow.share))} of it.`,
+    );
+  }
 
   // With no qualifying finisher the clause is simply omitted — an empty "They finish
   // through ." is worse than saying nothing.
   if (finishers.length > 0) {
     const named = finishers.slice(0, 2);
+    // Phrased as scoring OFF TEAMMATES, not as a bare "% assisted".
+    //
+    // The plate uses "assisted" for two unrelated measures: the node fill (what share of a
+    // player's OWN made baskets came off a pass) and "% of assisted creation" (a
+    // connection's share of the unit's assist VOLUME). Porter Jr. reads 84% by the first
+    // and 33.7% by the second on one plate, so the bare word cannot disambiguate itself.
     const description = named
-      .map((node) => `${node.name} on ${formatPct(node.assistedPct)} assisted`)
+      .map((node) => `${node.name} scoring ${formatPct(node.assistedPct)} off teammates`)
       .join(' and ');
     sentences.push(`${named.length > 1 ? 'They finish through' : 'It finishes through'} ${description}.`);
   }
