@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { Grain, GrainResponse } from '@/lib/contracts';
 import { color, encoding, font, network, type } from '@/lib/design/tokens';
@@ -429,6 +429,28 @@ export function CreationNetwork({
 
   // The subject of a player-grain plate. Null for team and lineup, where there is no hub
   // and every node is peer to the rest.
+  /**
+   * Publish the figure's own top offset so its height cap can be measured from it.
+   *
+   * A flat `vh` fraction can't know how tall the header above the drawing is, and that
+   * differs per grain — so one grain clipped while the others left whitespace. Measuring
+   * lets every grain fill exactly the room it actually has.
+   */
+  const svgRef = useRef<SVGSVGElement | null>(null);
+
+  const syncTop = useCallback(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const top = Math.round(el.getBoundingClientRect().top + window.scrollY);
+    el.style.setProperty('--cv-svg-top', `${top}px`);
+  }, []);
+
+  useEffect(() => {
+    syncTop();
+    window.addEventListener('resize', syncTop);
+    return () => window.removeEventListener('resize', syncTop);
+  }, [syncTop, data.scope.id, data.scope.grain]);
+
   const focalId = data.scope.grain === 'player' && data.scope.id !== null
     ? Number(data.scope.id)
     : null;
@@ -484,6 +506,9 @@ export function CreationNetwork({
         fontFamily: font.mono,
         padding: 'clamp(20px, 3vw, 34px) clamp(18px, 4vw, 56px) 44px',
         boxSizing: 'border-box',
+        // Fill the column when the two plates are paired, so both cards' bottom edges land
+        // on the same line instead of each card stopping at its own content height.
+        flex: 1,
       }}
     >
       {/* ── header rule ─────────────────────────────────────────────── */}
@@ -601,8 +626,31 @@ export function CreationNetwork({
       {/* ── the network ─────────────────────────────────────────────── */}
       <div style={{ position: 'relative', marginTop: 4 }}>
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${VIEW.width} ${VIEW.height}`}
-          style={{ display: 'block', width: '100%', height: 'auto', overflow: 'visible' }}
+          style={{
+            display: 'block',
+            width: '100%',
+            height: 'auto',
+            overflow: 'visible',
+            /*
+              Keep the figure itself inside the fold on a laptop. Without a ceiling the SVG
+              scales purely with container width, so at 1440x900 its bottom edge landed at
+              953px — the plate was cut through the middle of the drawing on load, which is
+              the worst possible clip.
+
+              The cap is measured from the SVG's OWN top offset rather than a flat `vh`
+              fraction: the header block above it differs per grain (the player plate carries
+              an extra caption line), so a fixed percentage either clipped one grain or left
+              the others under-filled. `100dvh - top - gutter` lets each grain grow to exactly
+              the room it has.
+
+              `max-height` preserves the aspect ratio — `height: auto` still governs below the
+              cap — so arcs and labels never squash; the plate simply stops growing.
+            */
+            maxHeight: 'min(calc(100dvh - var(--cv-svg-top, 340px) - 18px), 760px)',
+            margin: '0 auto',
+          }}
           role="img"
           aria-label={`Creation network for ${data.scope.label}. ${reading}`}
         >

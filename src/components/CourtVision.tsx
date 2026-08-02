@@ -216,7 +216,14 @@ export function CourtVision({
   const busy = status === 'loading';
 
   return (
-    <main style={{ background: color.shell, minHeight: '100vh' }}>
+    <main
+      style={{
+        background: color.shell,
+        minHeight: '100vh',
+        // Nav height, published once so the reading guide's viewport cap tracks it.
+        ['--cv-nav-h' as string]: '62px',
+      }}
+    >
       <nav
         aria-label="Scope"
         style={{
@@ -269,6 +276,8 @@ export function CourtVision({
         data={plate}
         scope={scope}
         densityNote={densityNoteText(note)}
+        // Same note the header renders, so §III's capping copy tracks the plate exactly.
+        density={note}
         // The unthinned payload: §D reports shares of this, not of the drawn subgraph.
         fullScope={data}
       />

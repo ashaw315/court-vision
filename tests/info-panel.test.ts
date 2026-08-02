@@ -172,24 +172,55 @@ describe('the prose does not assert anything the app contradicts', () => {
   });
 });
 
-describe('the worked example uses figures the plates actually show', () => {
-  it('quotes Porter Jr.\'s real lineup split and incoming connection share', async () => {
-    // An illustrative-but-invented pair would be a fabricated claim in prose. These are the
-    // top five-man unit's real rendered values.
-    const { getLineup, getLineupGrain } = await import('@/lib/api/queries');
+
+
+describe('§III capping copy is true in every grain', () => {
+  /** The panel's own rule, mirrored: thinned scopes describe the cap, uncapped ones don't. */
+  const describesCap = (note: { thinned: boolean }) => note.thinned;
+
+  it('claims a cap exactly when the plate actually caps', async () => {
+    // The failure this guards: a blanket "the plate shows the most-involved players" is
+    // FALSE in lineup grain, where all five players and every connection are drawn.
+    const { getTeamGrain, getLineup, getLineupGrain, getPlayerGrain } =
+      await import('@/lib/api/queries');
     const { DENSITY, scopeForPlate } = await import('@/lib/network/density');
-    const { buildConnections, buildRoleNodes } = await import('@/lib/network/model');
 
     const row = await getLineup('-1629008-1629611-1629651-1641730-1642856-');
-    const { data } = scopeForPlate(await getLineupGrain(row!), DENSITY.lineup);
-    const porter = buildRoleNodes(data).find((n) => n.name.includes('Porter'))!;
-    const top = buildConnections(data.edges).find((c) => c.shooterId === porter.personId)!;
+    const cases: Array<[string, boolean]> = [];
+    for (const raw of [
+      await getTeamGrain(),
+      await getLineupGrain(row!),
+      await getPlayerGrain(1629008, 'Porter Jr.'),
+    ]) {
+      const { note } = scopeForPlate(raw, DENSITY[raw.scope.grain]);
+      cases.push([raw.scope.grain, describesCap(note)]);
+    }
 
-    expect(Math.round((porter.assistedPct ?? 0) * 100)).toBe(84);
-    expect(+top.share.toFixed(1)).toBe(14.1);
+    expect(cases).toEqual([
+      ['team', true],    // 8 of 22 players, 18 of 286 connections
+      ['lineup', false], // 5 players, all 20 connections — nothing withheld
+      ['player', true],  // 10 of 14 players, 18 of 26 connections
+    ]);
+  });
 
+  it('renders the cap sentence from the note, not from literals', async () => {
     const text = await source();
-    expect(text).toContain('scores 84% off teammates');
-    expect(text).toContain("14.1% of that unit");
+    // Numbers must interpolate, or the copy would rot the moment a cap changed.
+    expect(text).toContain('{density.shownPlayers} most-involved of');
+    expect(text).toContain('{density.totalPlayers} players');
+    expect(text).toContain('{density.shownConnections} highest-share');
+    expect(text).toContain('{density.totalConnections} connections');
+    expect(text).not.toMatch(/\b8 most-involved of 22\b/);
+  });
+
+  it('offers an uncapped branch that claims nothing is withheld', async () => {
+    const text = await source();
+    expect(text).toContain('density?.thinned ?');
+    expect(text).toContain('Every player and every connection in this view is drawn');
+  });
+
+  it('frames the cap as a display choice, not missing data', async () => {
+    const text = await source();
+    expect(text).toContain('display choice, not a limit');
   });
 });

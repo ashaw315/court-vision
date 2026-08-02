@@ -6,6 +6,8 @@ Court Vision reads how a basketball team builds its offense — not where shots 
 
 The goal is to guide analysis, not perform it — surface what's real, and let a coach, scout, or exec bring the judgment. It's built for the Nets, but the pipeline is team-agnostic: pointing it at another team is a parameter change, not a rebuild.
 
+**Live:** https://court-vision-seven.vercel.app/
+
 ## The concept, and why it's shaped this way
 
 The original idea was more ambitious — an animated possession tracker showing how offense unfolds and spacing gets created. But that needs player-tracking data (the league's Second Spectrum optical feed), which isn't public and is protected under the collective bargaining agreement. Establishing that limit was early work.

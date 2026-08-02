@@ -6,6 +6,7 @@ import { SpatialSignature } from '@/components/court/SpatialSignature';
 import { InfoPanel, InfoTab } from '@/components/InfoPanel';
 import { CreationNetwork } from '@/components/network/CreationNetwork';
 import type { GrainResponse } from '@/lib/contracts';
+import type { DensityNote } from '@/lib/network/density';
 import { selectConnection } from '@/lib/court/connection';
 import type { SeasonScope } from '@/lib/data/scope';
 import { COURT_SLIDE_MS, playKey } from '@/lib/motion/play';
@@ -41,12 +42,15 @@ export function Instrument({
   data,
   scope = null,
   densityNote = null,
+  density = null,
   fullScope = null,
 }: {
   data: GrainResponse;
   scope?: SeasonScope | null;
   /** What the plate had to drop to stay legible, if anything. Team grain only. */
   densityNote?: string | null;
+  /** Structured form of the same capping state, so §III can describe it per grain. */
+  density?: DensityNote | null;
   /** The scope before thinning, so §D can report true whole-scope shares. */
   fullScope?: GrainResponse | null;
 }) {
@@ -159,8 +163,9 @@ export function Instrument({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 24,
-        padding: '24px 0 48px',
+        gap: 20,
+        // Tighter top padding buys the plate ~10px of the fold without touching the figure.
+        padding: '14px 0 48px',
         background: color.shell,
         minHeight: '100vh',
       }}
@@ -182,7 +187,18 @@ export function Instrument({
         style={{
           display: 'flex',
           flexWrap: 'wrap',
-          alignItems: 'flex-start',
+          /*
+            The two plates are a matched pair and should read as one figure, so in the
+            selected state they stretch to a common height (measured 1373 vs 1288 before —
+            an 85px step at the bottom edge). Only the CONTAINERS equalise; each plate's own
+            content keeps its intrinsic size and aspect ratio, so the shorter court plate
+            simply carries the extra whitespace.
+
+            At rest there is nothing to pair with, and stretching would make the lone
+            reading-guide column as tall as the network — so alignment stays top-anchored
+            until a connection is actually selected.
+          */
+          alignItems: connection ? 'stretch' : 'flex-start',
           gap: 24,
           padding: '0 clamp(0px, 1vw, 16px)',
         }}
@@ -201,6 +217,7 @@ export function Instrument({
             <InfoPanel
               grain={data.scope.grain}
               scope={scope}
+              density={density}
               onCollapse={() => setPanel(collapsePanel(panel))}
             />
           </div>
@@ -208,7 +225,21 @@ export function Instrument({
           <InfoTab onOpen={() => setPanel(openPanel(panel, hasSelection))} />
         )}
 
-        <div style={{ flex: connection ? '1 1 560px' : '1 1 620px', minWidth: 0 }}>
+        {/*
+          `display: flex` on the column makes the plate card a flex item that stretches to
+          the column's full height. Without it the card sized to its own content: the
+          columns were equal (both 1373px) but the SHORTER court card ended at 1288px,
+          leaving an 86px band of bare page background below it while the network's card
+          — the taller one setting the row height — happened to reach the bottom.
+        */}
+        <div
+          style={{
+            flex: connection ? '1 1 560px' : '1 1 620px',
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
           <CreationNetwork
             // Keyed on the LINEUP only, not the selection: selecting a connection must
             // dim the field, not replay the whole draw-in. A lineup change (Stage 5)
@@ -222,6 +253,7 @@ export function Instrument({
             densityNote={densityNote}
             fullScope={fullScope}
           />
+
         </div>
 
         {shown && (
@@ -229,6 +261,8 @@ export function Instrument({
             style={{
               flex: '1 1 560px',
               minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
               // Slide in on select, out on clear. Reduced motion gets neither — the panel
               // simply is, or is not, there.
               animation: animate
@@ -250,7 +284,7 @@ export function Instrument({
         )}
       </div>
 
-      {!connection && !isExiting && <RestingHint />}
+
     </div>
   );
 }
@@ -307,27 +341,6 @@ function SelectionBar({
       >
         CLEAR SELECTION
       </button>
-    </div>
-  );
-}
-
-/** Tells a first-time reader the network is interactive, without shouting. */
-function RestingHint() {
-  return (
-    <div
-      style={{
-        maxWidth: 1440,
-        width: '100%',
-        margin: '0 auto',
-        padding: '0 clamp(18px, 4vw, 56px)',
-        boxSizing: 'border-box',
-        fontFamily: font.mono,
-        fontSize: type.headerNote.size,
-        letterSpacing: type.headerNote.letterSpacing,
-        color: color.mutedLight,
-      }}
-    >
-      SELECT A CONNECTION TO SEE WHERE IT SCORES
     </div>
   );
 }

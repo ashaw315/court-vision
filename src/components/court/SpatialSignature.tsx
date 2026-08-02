@@ -198,6 +198,9 @@ export function SpatialSignature({
         fontFamily: font.mono,
         padding: 'clamp(20px, 3vw, 34px) clamp(18px, 4vw, 56px) 44px',
         boxSizing: 'border-box',
+        // Fill the column when the two plates are paired, so both cards' bottom edges land
+        // on the same line instead of each card stopping at its own content height.
+        flex: 1,
       }}
     >
       {/* ── header rule ─────────────────────────────────────────────── */}

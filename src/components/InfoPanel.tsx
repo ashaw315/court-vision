@@ -2,6 +2,7 @@
 
 import type { Grain } from '@/lib/contracts';
 import type { SeasonScope } from '@/lib/data/scope';
+import type { DensityNote } from '@/lib/network/density';
 import { color, font, type } from '@/lib/design/tokens';
 
 /**
@@ -90,12 +91,19 @@ function Term({ label, children }: { label: string; children: React.ReactNode })
 export function InfoPanel({
   grain,
   scope,
+  density,
   onCollapse,
 }: {
   /** Which plate is on screen — the node-fill caveat differs in the player grain. */
   grain: Grain;
   /** Real season scope; every number in §III comes from here, never a literal. */
   scope: SeasonScope | null;
+  /**
+   * The plate's own capping state — the SAME note that drives the header's
+   * "SHOWING N most-involved…" vs "ALL CONNECTIONS SHOWN". Passing it in (rather than
+   * re-deriving) is what keeps §III from ever contradicting the plate it describes.
+   */
+  density: DensityNote | null;
   onCollapse: () => void;
 }) {
   return (
@@ -108,6 +116,18 @@ export function InfoPanel({
         display: 'flex',
         flexDirection: 'column',
         gap: SECTION_GAP,
+        /*
+          A sidebar must never drive page height. Unconstrained, the guide ran 1465px in a
+          900px viewport and was the sole reason the whole page scrolled. Capping it to the
+          space below the nav and scrolling its own overflow keeps the page height governed
+          by the plates, which is what the reader is actually here for.
+          `100dvh` so mobile browser chrome doesn't push the bottom off-screen.
+        */
+        maxHeight: 'calc(100dvh - var(--cv-nav-h, 62px) - 28px)',
+        overflowY: 'auto',
+        // Sticky so the guide stays with the reader as the plates scroll past it.
+        position: 'sticky',
+        top: 14,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
@@ -187,11 +207,6 @@ export function InfoPanel({
           <strong>X% of assisted creation.</strong> Of all the assisted baskets shown, the
           share running through one connection. This is the arc figure.
         </Term>
-        <Prose>
-          On the top five-man unit, Porter Jr. scores 84% off teammates, while the single
-          biggest connection feeding him carries 14.1% of that unit&rsquo;s creation — the
-          same player, two different denominators, two different questions.
-        </Prose>
       </section>
 
       {/* ── III ───────────────────────────────────────────────────────── */}
@@ -216,6 +231,28 @@ export function InfoPanel({
           only as a surname. Where a surname could mean two players, the assister is recorded
           as unknown rather than guessed — no edge in this tool is an inferred one.
         </Prose>
+        {/*
+          What the plate DRAWS, per grain. This must never be a blanket statement: a lineup
+          is five players and shows every connection, so claiming "the most-involved players"
+          there would be false. The copy is driven by the same `DensityNote` the plate header
+          uses, so the two cannot disagree.
+        */}
+        {density?.thinned ? (
+          <Prose>
+            <strong>What the plate draws.</strong>{' '}
+            For legibility this view draws the {density.shownPlayers} most-involved of{' '}
+            {density.totalPlayers} players and the {density.shownConnections} highest-share
+            of {density.totalConnections} connections. That is a display choice, not a limit
+            of the data — the full roster and every connection remain underneath, and the
+            plate states what it is showing on its own header.
+          </Prose>
+        ) : (
+          <Prose>
+            <strong>What the plate draws.</strong>{' '}
+            Every player and every connection in this view is drawn — nothing is held back
+            for legibility at this scope.
+          </Prose>
+        )}
         <Prose>
           Shot totals, assist counts and minutes reconcile to the official box scores.
         </Prose>
