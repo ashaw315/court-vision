@@ -9,10 +9,13 @@ export function ShotMap({
   shots,
   label,
   accent = color.rust,
+  unavailable,
 }: {
   shots: MapShot[];
   label: string;
   accent?: string;
+  /** Set when there is no data for this side at all: says why, instead of "0 attempts". */
+  unavailable?: string;
 }) {
   const made = shots.filter((s) => s.made);
   const missed = shots.filter((s) => !s.made);
@@ -27,13 +30,18 @@ export function ShotMap({
       <svg
         viewBox="-260 -10 520 490"
         role="img"
-        aria-label={`${label}: ${shots.length} attempts, ${made.length} made`}
+        aria-label={unavailable ? `${label}: no data. ${unavailable}` : `${label}: ${shots.length} attempts, ${made.length} made`}
         style={{ width: '100%', height: 'auto', display: 'block' }}
       >
         <rect x={-250} y={y(420)} width={500} height={470} fill="none" stroke={color.rule} strokeWidth={1} />
         <rect x={-80} y={y(140)} width={160} height={190} fill="none" stroke={color.structure} strokeWidth={1} />
         <circle cx={0} cy={y(0)} r={7.5} fill="none" stroke={color.structure} strokeWidth={1} />
         <path d={threeLine} fill="none" stroke={color.structure} strokeWidth={1} />
+        {unavailable && (
+          <text x={0} y={y(300)} textAnchor="middle" fontSize={14} letterSpacing="0.14em" fill={color.muted}>
+            NO DATA
+          </text>
+        )}
         {missed.map((s, i) => (
           <circle key={`m${i}`} cx={s.locX} cy={y(s.locY)} r={3} fill="none" stroke={color.muted} strokeWidth={0.8} opacity={0.45} />
         ))}
@@ -42,7 +50,9 @@ export function ShotMap({
         ))}
       </svg>
       <figcaption style={{ fontSize: 10, letterSpacing: '0.14em', color: color.muted, marginTop: 6 }}>
-        {label.toUpperCase()} · {shots.length} ATTEMPTS · {made.length} MADE
+        {unavailable
+          ? <>{label.toUpperCase()} · NOT AVAILABLE — {unavailable}</>
+          : <>{label.toUpperCase()} · {shots.length} ATTEMPTS · {made.length} MADE</>}
       </figcaption>
     </figure>
   );

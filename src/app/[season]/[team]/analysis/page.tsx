@@ -37,7 +37,10 @@ export default async function AnalysisPage({
   const nameOf = (id: number) => { const t = teamById(id); return t ? t.abbreviation : String(id); };
 
   const offenseAbove = timeline.games.map((g) => g.offense.points - g.offense.expectedPoints);
-  const defenseAbove = timeline.games.filter((g) => g.defense).map((g) => (g.defense!.points - g.defense!.expectedPoints));
+  // Null where the opponent's side has no data, so both lines share one game axis.
+  const defenseAbove = timeline.games.map((g) => (g.defense ? g.defense.points - g.defense.expectedPoints : null));
+  const hasDefense = defense.gamesWithDefense > 0;
+  const noDefenseReason = 'no opponent of this team has validated data loaded for this season';
   const footnote = methodologyFootnote(seasonScope);
   const model = timeline.model;
 
@@ -58,16 +61,21 @@ export default async function AnalysisPage({
 
       <Section
         title="Game by game"
-        note="Points above expected per game, smoothed over ten games. Above the line is shooting better than the typical return from those spots; for the opponent line, above the line is the other side shooting well against this team."
+        note={hasDefense
+          ? 'Points above expected per game, smoothed over ten games. Above the line is shooting better than the typical return from those spots; for the opponent line, above the line is the other side shooting well against this team. Gaps in the opponent line are games with no defensive data.'
+          : 'Points above expected per game, smoothed over ten games. Above the line is shooting better than the typical return from those spots. There is no opponent line yet: ' + noDefenseReason + '.'}
       >
         <ZeroLine
           series={[
             { label: 'This team, points above expected', values: rolling(offenseAbove, 10), stroke: color.rust },
-            { label: 'Opponents, points above expected', values: rolling(defenseAbove, 10), stroke: color.structure },
+            ...(hasDefense
+              ? [{ label: 'Opponents, points above expected', values: rolling(defenseAbove, 10), stroke: color.structure }]
+              : []),
           ]}
         />
         <p style={{ fontSize: 10, color: color.muted, marginTop: 6 }}>
-          <span style={{ color: color.rust }}>■</span> THIS TEAM · <span style={{ color: color.structure }}>■</span> OPPONENTS
+          <span style={{ color: color.rust }}>■</span> THIS TEAM
+          {hasDefense && <> · <span style={{ color: color.structure }}>■</span> OPPONENTS</>}
         </p>
       </Section>
 
@@ -76,8 +84,13 @@ export default async function AnalysisPage({
         note={`Shots opponents took against this team, in ${defense.gamesWithDefense} of ${defense.games} games with defensive data. Field-goal attempts only — free throws and turnovers are not in this data.`}
       >
         <div style={{ display: 'grid', gap: 28, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', alignItems: 'start' }}>
-          <ShotMap shots={defense.shots} label="Shots allowed" accent={color.structure} />
-          <Table
+          <ShotMap
+            shots={defense.shots}
+            label="Shots allowed"
+            accent={color.structure}
+            unavailable={hasDefense ? undefined : noDefenseReason}
+          />
+          {hasDefense ? <Table
             head={['Opponent', 'GP', 'Pts/shot for', 'Pts/shot allowed']}
             rows={defense.byOpponent.map((o) => [
               <Link key={o.opponentId} href={`/${season.value}/${teamPath}/vs/${nameOf(o.opponentId).toLowerCase()}`} style={{ color: color.rustDeep }}>
@@ -87,7 +100,12 @@ export default async function AnalysisPage({
               fmt(pointsPerShot(o.offense) ?? 0, 2),
               fmt(pointsPerShot(o.defense) ?? 0, 2),
             ])}
-          />
+          /> : (
+            <p style={{ fontSize: 12, lineHeight: 1.7, color: color.text, maxWidth: 420 }}>
+              Defensive figures appear once this team&rsquo;s opponents are loaded for {season.value}.
+              Each game counts only when the opponent&rsquo;s side passes validation.
+            </p>
+          )}
         </div>
       </Section>
 

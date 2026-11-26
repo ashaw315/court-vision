@@ -49,7 +49,7 @@ export default async function MatchupPage({
         <>
           <Section
             title="Games"
-            note="Field-goal attempts only. A dash means the opponent's side of that game did not pass validation, so there is no defensive data for it."
+            note={`Field-goal attempts only. A dash means there is no data for ${opponent.abbreviation}'s side of that game: either ${opponent.abbreviation} is not loaded for this season or that side did not pass validation.`}
           >
             <Table
               head={['Date', 'Site', `${team.abbreviation} FG pts`, `${opponent.abbreviation} FG pts`, `${team.abbreviation} pts/shot`]}
@@ -65,7 +65,12 @@ export default async function MatchupPage({
           <Section title="Shot maps">
             <div style={{ display: 'grid', gap: 28, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
               <ShotMap shots={matchup.teamShots} label={`${team.abbreviation} shots`} />
-              <ShotMap shots={matchup.opponentShots} label={`${opponent.abbreviation} shots`} accent={color.structure} />
+              <ShotMap
+                shots={matchup.opponentShots}
+                label={`${opponent.abbreviation} shots`}
+                accent={color.structure}
+                unavailable={matchup.games.some((g) => g.defense) ? undefined : `no validated ${opponent.abbreviation} data for these games`}
+              />
             </div>
           </Section>
         </>
