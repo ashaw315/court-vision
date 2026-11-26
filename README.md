@@ -1,6 +1,6 @@
 # Court Vision
 
-A tool for reading how the Brooklyn Nets create baskets — who sets up whom, and where those baskets land — across the 2025-26 regular season, at team, lineup, and player scope.
+A tool for reading how NBA teams create baskets — who sets up whom, where those baskets land, and what opponents do against them — for any team and season, at team, lineup, and player scope.
 
 **Live:** [court-vision-seven.vercel.app](https://court-vision-seven.vercel.app)
 
@@ -24,7 +24,9 @@ A tool for reading how the Brooklyn Nets create baskets — who sets up whom, an
 
 Court Vision visualizes *assisted scoring* — the creation connections that produce made baskets — as a paired set of plates: a creation network (who creates for whom) and a spatial signature (where a given connection's baskets land). The same instrument renders three scopes: the full roster, a five-man lineup, or a single player.
 
-It is observational, not predictive: it surfaces what the record shows and leaves the judgment to the reader.
+Beyond the creation network it offers a defence view (shots allowed), head-to-head matchups, a game-by-game timeline, year-over-year trends, and a location-based shot-value model (expected points) used for shot-making and points-per-assist. Everything is built from field-goal attempts: free throws, turnovers and tracking data are not in the source, and views never imply them. Where defensive data is missing it is shown as unavailable, never as zero.
+
+The project began as a Nets-only, 2025-26 take-home; the league-wide, multi-season version builds on the same validated pipeline.
 
 For the concept, the design reasoning, and the data-integrity narrative, see **[WRITEUP.md](WRITEUP.md)**.
 
@@ -34,7 +36,7 @@ For the concept, the design reasoning, and the data-integrity narrative, see **[
 NBA play-by-play → Python ETL → Zod contract → Neon Postgres (Drizzle) → typed API → React/SVG frontend → Vercel
 ```
 
-The ETL runs locally and writes a validated dataset; the deployed app reads only from Postgres and never contacts the NBA at runtime. Rationale for each choice is in **[WRITEUP.md](WRITEUP.md)**.
+The ETL (`etl/run_season.py --season 2025-26 [--teams BKN]`) runs locally and writes a validated dataset per team-season, which `npm run db:load` loads into Postgres; the deployed app reads only from Postgres and never contacts the NBA at runtime. Rationale for each choice is in **[WRITEUP.md](WRITEUP.md)**.
 
 ## Tech stack
 

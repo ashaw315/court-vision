@@ -1,115 +1,58 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Operating notes for building Court Vision with Claude. Read before writing code.
 
-Court Vision — operating instructions for building this project with Claude as execution
-partner. Read this before writing code in any session.
+## Current state
 
----
-
-## Current repo state (pre-build)
-
-**Nothing from the build order exists yet.** The working tree is a validated data spike
-plus planning docs. Do not assume any app scaffolding is present — verify before
-referencing it.
+Court Vision started as a Nets-only take-home (2025-26). It is now a league-wide tool:
+**every NBA team, selectable by season** (target: 2023-24, 2024-25, 2025-26), with the
+original creation network plus defence, head-to-head matchups, a location-based shot-value
+model, a game-by-game timeline and year-over-year trends. The Nets-only and
+"observational, no advisory features" limits belonged to the assignment and no longer apply.
+The data-honesty rules below still do.
 
 ```
-CLAUDE.md      this file — scope, guardrails, build order
-STACK.md       per-layer technology justifications (source for the README write-up)
-spike.py       throwaway spike; already run, do not re-run to re-derive facts
-spike_out/     saved raw NBA JSON — the test fixtures for ETL transforms
-phases/        empty
-.venv/         python 3.13; nba_api 1.11.4, pandas, numpy, requests
+src/db/schema.ts      teams, team_seasons, games, game_team_validation, player_team_seasons,
+                      lineups, lineup_intervals, shot_events, assist_edges (season + team scoped)
+src/db/load.ts        npm run db:load -- --season 2025-26 [--teams BKN] [--dry-run]
+src/db/seed.ts        reloads the committed Nets 2025-26 sample (data/season.json) for tests/CI
+src/lib/api/          queries.ts (grains), analysis.ts (timeline/defence/matchup/trend/value)
+src/lib/model/        expected-points.ts — the shot-value model
+src/app/              / (league index), /[season]/[team], .../analysis, .../vs/[opponent], /api/*
+etl/                  run_season.py --season 2025-26 [--teams BKN,BOS]  (runs locally)
 ```
 
-- **Not a git repository yet.** `git init` is part of Phase 1, along with the `.gitignore`
-  described under Repo hygiene.
-- **No `package.json`, no `/etl`, no test runner, no migrations.** Build/lint/test commands
-  do not exist yet; they arrive in Phase 1 (Next + TS + Drizzle + test runner). Once they
-  exist, record the real invocations here — do not guess them in the meantime.
-- Python work runs against the local venv: `.venv/bin/python spike.py`. The venv is
-  gitignored; `nba_api` is the only non-transitive dependency the spike needs.
+- Every API route takes `?season=2025-26&team=BKN` (defaults: current default season, BKN).
+  A team-season that is not loaded is a 404, never an empty result.
+- Tests that touch the database assume the **Nets 2025-26 sample** (`tests/helpers/scope.ts`).
+- CI (`.github/workflows/ci.yml`) runs typecheck, lint, ETL tests, and the database/API tests
+  against a dedicated Neon branch via the `TEST_DATABASE_URL` secret. Never point it at production.
+- stats.nba.com blocks cloud IPs: the ETL runs on a local machine; the deployed app reads Postgres.
+- Migrations that add NOT NULL columns to populated tables are hand-edited (add nullable,
+  backfill, tighten). Record hand-applied migrations in `drizzle.__drizzle_migrations`.
 
-### The spike fixtures are the test surface
+### Backfill
 
-`spike_out/*.json` are real endpoint responses saved in NBA-stats' `{headers, rows}`
-column-array shape (not objects — every transform must zip headers to rows). These are the
-fixtures TDD'd ETL transforms should run against, so the NBA endpoints are never hit from
-a test.
-
-| File | Endpoint | Shape |
-|---|---|---|
-| `s2b_pbp_v3_sample.json` | `playbyplayv3` | 60 event objects, 23 fields each — **the core source** |
-| `s2b_JOINED.json` | join result | 41 made shots joined to their location + assister |
-| `s2_shots_game.json` | `shotchartdetail` | 24 headers, 60 rows (single game) |
-| `q1_shots_sample.json` | `shotchartdetail` | 24 headers, 25 sample rows (6,933 total for the season) |
-| `q3_lineups.json` | `teamdashlineups` | 56 headers, top 40 lineups by minutes |
-
-Note `playbyplayv3` returns **objects, not `{headers, rows}`** — only the older
-`shotchartdetail` / `teamdashlineups` fixtures need header-to-row zipping.
-
-The superseded spike-1 passing fixtures (`q2_PassesMade.json`,
-`q2_PassesReceived.json`, from `playerdashptpass`) remain on disk but are no longer the
-data source — see the passing/assists section below.
-
-Shapes worth knowing before modeling, confirmed against the fixtures:
-
-- **Lineup identity** is `GROUP_ID`, a dash-delimited sorted player-id string:
-  `'-1629008-1629611-1629651-1641730-1642856-'` (leading and trailing dashes included).
-  That is the natural join key to five `PLAYER_ID`s; `GROUP_NAME` is display-only
-  (`"M. Porter Jr. - T. Mann - N. Claxton - N. Clowney - E. Dëmin"`).
-- **Player names come in at least four variants** across the sources: play-by-play
-  `playerName` (`"Porter Jr."`, bare surname), `playerNameI` (`"M. Porter Jr."`),
-  `shotchartdetail`'s `PLAYER_NAME` (`FIRST LAST`), and the legacy passing fixtures'
-  `LAST, FIRST` (`"Minott, Josh"`). Normalize on `PLAYER_ID`/`personId`, never on name.
-
----
+```
+.venv/bin/python etl/run_season.py --season 2025-26      # ~1,230 games, resumable
+npm run db:load -- --season 2025-26                      # per-team, idempotent
+```
+Repeat per season. Games are fetched once and both sides processed. A team-game that fails
+validation is excluded for that team and listed in its data audit; the opponent's side is
+judged separately, so defence for such a game is reported as unavailable, not as zero.
 
 ## What this is
 
-**Court Vision** is an observational tool for reading how the Brooklyn Nets **create
-baskets** — the assist connections that generate scoring, and where on the floor those
-baskets happen.
+**Court Vision** reads how teams create baskets: **who creates for whom** (assisted made
+baskets) and **where on the floor the basket happens**, at three grains — player, lineup, team
+— for any team and season, plus what opponents do against them.
 
-The subject is **assisted scoring**, not "ball movement." That is a deliberate narrowing
-to what the data actually supports: every edge in this tool is a real assisted made
-basket, with a real assister and a real court location. "Ball movement" would imply
-passes we cannot see — the ball swung, the hockey assist, the pass that led to a miss.
-Where a ball-movement phrase is useful in copy, it is subordinate to and defined by the
-assist mechanism, never the umbrella claim.
+Every figure is a count or ratio of real field-goal attempts. Free throws, turnovers,
+possessions, defenders and shot clock are not in this data; views never imply them.
 
-Two fused lenses on the same events: **who creates for whom** (the assist connection)
-and **where the basket happens** (shot geography). Three grains from the same underlying
-data:
-
-- **Player** — how one player creates baskets and gets created for, plus their shot
-  signature
-- **Lineup** — a five-man unit's scoring-creation network + shot map, filtered to the
-  possessions that unit was actually on court for
-- **Team** — the full Nets roster's scoring-creation network + shot map
-
-It is **observational, not advisory**. It shows a coach/scout/exec their own data in a
-form they haven't seen; it never scores lineups, recommends moves, or predicts. The
-human brings the judgment. This is a deliberate design line — do not add "grades,"
-"ratings," or "you should add X" features.
-
-**Nets-only, 2025-26 regular season.** Not league-wide. The focus is the point: a tool
-built for *this organization* to read *its own* rebuild is a stronger deliverable than a
-generic league viewer. Say why in the README.
-
----
-
-## The central concept is the candidate's own
-
-Per the take-home brief, the concept must be the candidate's, not AI-suggested. It is:
-the candidate's instinct (lineups, ball movement, make/miss per possession) pressure-
-tested against real public-data limits and honestly narrowed to what public data
-supports. Claude's role here is **execution** — code, schema, debugging, review, the
-write-up — not concept generation. Do not invent new core features; help build the
-locked scope well. If a genuinely new *concept* idea arises, flag it as the candidate's
-to decide, don't silently bake it in.
-
----
+**Expected points** compare a shot with what a typical attempt from that spot and value
+returned that season. It is location + shot value only — not shot quality in a tracking sense
+— and its sample (shots, teams) is shown wherever it is used.
 
 ## Hard-won data facts (from the spike — do not re-derive)
 
@@ -312,38 +255,22 @@ coverage.
 - When a slice touches the data contract, update the shared types FIRST, then DB, then API,
   then frontend — contract-first.
 
-## Guardrails / do-nots
+## Guardrails
 
-- **No advisory features.** Observational only. No grades, rankings, recommendations,
-  projections, or "who to add."
-- **No fabricated data.** Especially no invented player positions or defensive spacing.
-  If a view would require data we don't have, we don't build that view.
-- **No opponent/matchup views.** Per-game play-by-play makes "Nets vs X" mechanically
-  possible now, but it is still out of scope — the brief says "small" twice, and the
-  three grains (player / lineup / team) are the whole build. Goes in README "Future
-  directions."
-- **No scope creep dressed as ambition.** The brief says "small" twice. Player + lineup +
-  team grain, Nets-only, is the whole scope. Everything else goes in README "Future
-  directions," not the build.
-- **No over-engineering.** No separate backend service, no auth system, no multi-team
-  infra. Right-sized.
-- **The encodable dimensions are fixed.** Everything the visualization encodes comes from
-  exactly three: **assist connection volume**, **shot value (2 vs 3) / points created**,
-  and the **assisted-vs-unassisted split**. Nothing else. If a proposed encoding needs a
-  dimension not on that list, it needs data we don't have — don't build it.
+These are about honesty, not scope — the product is free to grow.
 
-  Explicitly OUT of scope; these go in README **"Future Directions,"** not the build:
-  - **Play-type / isolation context (Synergy).** Deferred, not impossible: the endpoint
-    is confirmed reachable but needs per-play-type calls (both spike attempts returned
-    empty). Real work, out of scope for this build.
-  - **Contested/uncontested, or any shot-difficulty dimension.** This is optical tracking
-    (Second Spectrum) and is **not public**. Not deferred — unavailable. Never estimate
-    it.
-  - **Turnovers / full possession context.** A separate feature with its own data
-    modeling; not this build.
-- **Never guess an assister.** Ambiguous surname→`personId` resolution yields `null` plus
-  a logged warning, never a best guess. Label assist data as **assisted made baskets**,
-  not "all ball movement," everywhere it appears.
+- **No fabricated data.** No invented player positions, defensive spacing or contest levels.
+  If a view needs data we don't have, we don't build that view.
+- **Never guess an assister.** Ambiguous surname→`personId` resolution yields `null` plus a
+  logged warning. Label assist data as **assisted made baskets**, not "all ball movement."
+- **Unavailable is not zero.** Missing defensive data (opponent side failed validation or is
+  not loaded) is `null` in payloads and a dash in the UI.
+- **Name the model.** Anything built on expected points states what it knows (location and
+  shot value) and what it was built from (shots, teams).
+- **Tracking-only dimensions stay out** (contested shots, defender distance, speed). Not public.
+- **Play-type context (Synergy), turnovers and full possession modelling** remain future work.
+- **Judgements are the reader's.** Views show counts and differences from a stated baseline;
+  they do not issue grades, rankings or recommendations unless that is deliberately added.
 
 ## Repo hygiene
 
@@ -352,16 +279,7 @@ coverage.
 - The spike script + `spike_out/` fixtures may live in a gitignored `/scratch` for
   reference while modeling; not part of the deliverable.
 
-## Deliverables (from the brief)
-
-1. GitHub repo, clean history, readable code.
-2. Deployed live version (Vercel).
-3. Write-up: project summary, architecture + technology choices, AI-tool disclosure
-   (tools used + prompt summaries), and the data-honesty narrative.
-
----
-
-## Build order (proposed — confirm before starting each phase)
+## History: original build order (Nets take-home)
 
 1. **Repo + tooling skeleton** — Next + TS, Drizzle, test runner, gitignore, env scaffold.
 2. **Data contract** — shared TS types + Zod for player, shot event, assist edge,
