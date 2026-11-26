@@ -26,7 +26,7 @@ const playfair = Playfair_Display({
 export const metadata: Metadata = {
   title: "Court Vision",
   description:
-    "Reading the Brooklyn Nets' offensive identity through ball movement and shot geography.",
+    "How every NBA team creates baskets: who sets up whom, where the shots land, and what opponents do against them.",
 };
 
 export default function RootLayout({
