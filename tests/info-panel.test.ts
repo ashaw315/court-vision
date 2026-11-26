@@ -109,7 +109,7 @@ describe('methodology numbers come from real data', () => {
     // The panel must interpolate; a hardcoded 72/82/10 would silently rot if the dataset
     // were regenerated.
     expect(text).toContain('{scope.games} of {scope.scheduledGames} games');
-    expect(text).toContain('{scope.excludedGames} were excluded');
+    expect(text).toContain("{scope.excludedGames} {scope.excludedGames === 1 ? 'was' : 'were'} excluded");
     expect(text).not.toMatch(/\b72 of 82\b/);
   });
 
