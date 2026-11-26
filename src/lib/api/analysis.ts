@@ -323,6 +323,7 @@ export async function getTrend(teamId: number): Promise<TrendResponse> {
       games: timeline.games.length,
       offense,
       defense: defenseGames > 0 ? defense : null,
+      defenseGames,
       model: timeline.model,
     });
   }

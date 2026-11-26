@@ -102,5 +102,8 @@ describe('analysis queries', () => {
     const anyDefense = timeline.games.some((g) => g.defense !== null);
     const season = trend.seasons.find((s) => s.season === NETS.season)!;
     expect(season.defense === null).toBe(!anyDefense);
+    // The allowed figure says how many games it covers.
+    expect(season.defenseGames).toBe(timeline.games.filter((g) => g.defense !== null).length);
+    expect(season.defenseGames).toBeLessThanOrEqual(season.games);
   });
 });

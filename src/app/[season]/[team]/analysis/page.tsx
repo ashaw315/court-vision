@@ -146,7 +146,10 @@ export default async function AnalysisPage({
             fmt(expectedPerShot(s.offense) ?? 0, 3),
             pct(s.offense.threes, s.offense.shots),
             pct(s.offense.madeAssisted, s.offense.made),
-            s.defense ? fmt(pointsPerShot(s.defense) ?? 0, 3) : '—',
+            // Allowed figures cover only games with the opponent's side; say how many.
+            s.defense
+              ? `${fmt(pointsPerShot(s.defense) ?? 0, 2)} (${s.defenseGames} of ${s.games} ${s.games === 1 ? 'game' : 'games'})`
+              : '—',
           ])}
         />
       </Section>

@@ -104,6 +104,8 @@ export const SeasonTrend = z.object({
   offense: SideLine,
   /** Null if no game had defensive data. */
   defense: SideLine.nullable(),
+  /** How many of `games` had defensive data (the opponent's side validated). */
+  defenseGames: z.number().int().nonnegative(),
   model: ModelInfo,
 });
 export type SeasonTrend = z.infer<typeof SeasonTrend>;
