@@ -15,6 +15,7 @@
     "test:etl": ".venv/bin/ruff check . && .venv/bin/python -m pytest -q && vitest run tests/etl-output.test.ts",
     "lint:py": ".venv/bin/ruff check .",
     "db:seed": "tsx src/db/seed.ts",
+    "db:load": "tsx src/db/load.ts",
     "db:verify": "tsx src/db/verify.ts"
   },
   "dependencies": {

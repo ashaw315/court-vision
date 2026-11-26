@@ -14,6 +14,8 @@ import {
 } from '@/lib/api/queries';
 import type { ShotEvent } from '@/lib/contracts';
 
+import { NETS } from './helpers/scope';
+
 /**
  * API query + shaping tests, against the SEEDED Neon database.
  *
@@ -52,7 +54,7 @@ beforeAll(async () => {
     return;
   }
   try {
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
     if (team.shots.length === 0) {
       preflightError = 'Database is reachable but empty. Run `npm run db:seed`.';
     }
@@ -133,14 +135,14 @@ describe('deriveEdges', () => {
 
 describe('GET /api/player shaping', () => {
   it('returns a contract-valid bundle for a real player', async () => {
-    const name = await playerExists(PORTER);
+    const name = await playerExists(PORTER, NETS);
     expect(name).toBe('Porter Jr.');
-    const payload = await getPlayerGrain(PORTER, name!);
+    const payload = await getPlayerGrain(PORTER, name!, NETS);
     expect(GrainResponse.safeParse(payload).success).toBe(true);
   });
 
   it('scopes shots to that player and reports matching meta', async () => {
-    const payload = await getPlayerGrain(PORTER, 'Porter Jr.');
+    const payload = await getPlayerGrain(PORTER, 'Porter Jr.', NETS);
     expect(payload.shots.length).toBe(858);
     expect(payload.meta.shotCount).toBe(payload.shots.length);
     for (const shot of payload.shots) expect(shot.shooterId).toBe(PORTER);
@@ -149,14 +151,14 @@ describe('GET /api/player shaping', () => {
   it('includes edges in BOTH directions', async () => {
     // A player's role is what they create AND what is created for them; one direction
     // alone would misrepresent it.
-    const payload = await getPlayerGrain(PORTER, 'Porter Jr.');
+    const payload = await getPlayerGrain(PORTER, 'Porter Jr.', NETS);
     expect(payload.edges.some((e) => e.assisterId === PORTER)).toBe(true);
     expect(payload.edges.some((e) => e.shooterId === PORTER)).toBe(true);
   });
 
   it('labels every player referenced by edges or shots', async () => {
     // The UI must never need a second request to name a node.
-    const payload = await getPlayerGrain(PORTER, 'Porter Jr.');
+    const payload = await getPlayerGrain(PORTER, 'Porter Jr.', NETS);
     const known = new Set(payload.players.map((p) => p.personId));
     for (const edge of payload.edges) {
       expect(known.has(edge.assisterId)).toBe(true);
@@ -169,7 +171,7 @@ describe('GET /api/player shaping', () => {
   });
 
   it('preserves null assisters rather than coercing them', async () => {
-    const payload = await getPlayerGrain(PORTER, 'Porter Jr.');
+    const payload = await getPlayerGrain(PORTER, 'Porter Jr.', NETS);
     const nulls = payload.shots.filter((s) => s.assisterId === null);
     expect(nulls.length).toBeGreaterThan(0);
     for (const shot of payload.shots) {
@@ -178,13 +180,13 @@ describe('GET /api/player shaping', () => {
   });
 
   it('reports no player for an unknown id, so the route can 404', async () => {
-    expect(await playerExists(9_999_999)).toBeNull();
+    expect(await playerExists(9_999_999, NETS)).toBeNull();
   });
 });
 
 describe('GET /api/lineup shaping — the lineup-filtered capability', () => {
   it('returns a contract-valid bundle for a real unit', async () => {
-    const lineup = await getLineup(TOP_LINEUP);
+    const lineup = await getLineup(TOP_LINEUP, NETS);
     expect(lineup).not.toBeNull();
     const payload = await getLineupGrain(lineup!);
     expect(GrainResponse.safeParse(payload).success).toBe(true);
@@ -194,7 +196,7 @@ describe('GET /api/lineup shaping — the lineup-filtered capability', () => {
   it('includes ONLY shots taken while that exact five was on court', async () => {
     // The assertion the whole project rests on. If this fails, a "lineup network" is
     // really a season network wearing a lineup's name.
-    const lineup = await getLineup(TOP_LINEUP);
+    const lineup = await getLineup(TOP_LINEUP, NETS);
     const payload = await getLineupGrain(lineup!);
     expect(payload.shots.length).toBeGreaterThan(0);
     for (const shot of payload.shots) {
@@ -204,7 +206,7 @@ describe('GET /api/lineup shaping — the lineup-filtered capability', () => {
   });
 
   it('derives edges within the unit only, not season-wide', async () => {
-    const lineup = await getLineup(TOP_LINEUP);
+    const lineup = await getLineup(TOP_LINEUP, NETS);
     const payload = await getLineupGrain(lineup!);
     for (const edge of payload.edges) {
       expect(TOP_FIVE.has(edge.assisterId)).toBe(true);
@@ -216,9 +218,9 @@ describe('GET /api/lineup shaping — the lineup-filtered capability', () => {
     // Guards the specific mistake of reading `assist_edges` (season-scoped, whole team)
     // for a lineup: Claxton -> Porter Jr. is 94 across the season but far fewer within
     // any single unit. Equal counts would mean the filter is not being applied.
-    const lineup = await getLineup(TOP_LINEUP);
+    const lineup = await getLineup(TOP_LINEUP, NETS);
     const lineupPayload = await getLineupGrain(lineup!);
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
 
     const pair = (edges: typeof team.edges) =>
       edges.find((e) => e.assisterId === 1629651 && e.shooterId === PORTER)?.count ?? 0;
@@ -232,7 +234,7 @@ describe('GET /api/lineup shaping — the lineup-filtered capability', () => {
 
   it('agrees with the shot count the lineups list reports', async () => {
     // Two independent queries; if they disagree, one of them is filtering wrongly.
-    const [lineup, list] = await Promise.all([getLineup(TOP_LINEUP), getLineups(0)]);
+    const [lineup, list] = await Promise.all([getLineup(TOP_LINEUP, NETS), getLineups(NETS, 0)]);
     const payload = await getLineupGrain(lineup!);
     const summary = list.find((l) => l.groupId === TOP_LINEUP);
     expect(summary).toBeDefined();
@@ -240,13 +242,13 @@ describe('GET /api/lineup shaping — the lineup-filtered capability', () => {
   });
 
   it('returns null for an unknown groupId, so the route can 404', async () => {
-    expect(await getLineup('-1-2-3-4-5-')).toBeNull();
+    expect(await getLineup('-1-2-3-4-5-', NETS)).toBeNull();
   });
 });
 
 describe('GET /api/team shaping', () => {
   it('returns a contract-valid bundle covering the whole season', async () => {
-    const payload = await getTeamGrain();
+    const payload = await getTeamGrain(NETS);
     expect(GrainResponse.safeParse(payload).success).toBe(true);
     expect(payload.shots.length).toBe(6089);
     expect(payload.edges.length).toBe(286);
@@ -254,21 +256,21 @@ describe('GET /api/team shaping', () => {
   });
 
   it('matches the season assisted split verified in Phase 4', async () => {
-    const payload = await getTeamGrain();
+    const payload = await getTeamGrain(NETS);
     expect(payload.split.madeBaskets).toBe(2714);
     expect(payload.split.assisted).toBe(1817);
     expect(payload.split.assistedPct).toBeCloseTo(0.669, 3);
   });
 
   it('preserves all 4,272 null assisters', async () => {
-    const payload = await getTeamGrain();
+    const payload = await getTeamGrain(NETS);
     expect(payload.shots.filter((s) => s.assisterId === null).length).toBe(4272);
   });
 });
 
 describe('GET /api/lineups shaping', () => {
   it('returns a contract-valid list', async () => {
-    const lineups = await getLineups(50);
+    const lineups = await getLineups(NETS, 50);
     expect(LineupsResponse.safeParse({
       lineups, minMinutes: 50, emitFloorMinutes: 25,
     }).success).toBe(true);
@@ -276,14 +278,14 @@ describe('GET /api/lineups shaping', () => {
 
   it('honours the threshold, and the emit floor exposes more units', async () => {
     // The separation that lets the frontend move the display cutoff with no server change.
-    const [atFifty, atFloor] = await Promise.all([getLineups(50), getLineups(25)]);
+    const [atFifty, atFloor] = await Promise.all([getLineups(NETS, 50), getLineups(NETS, 25)]);
     expect(atFifty.length).toBe(5);
     expect(atFloor.length).toBe(21);
     for (const lineup of atFifty) expect(lineup.minutes).toBeGreaterThanOrEqual(50);
   });
 
   it('carries minutes and a shot count on every row for sample-size honesty', async () => {
-    for (const lineup of await getLineups(25)) {
+    for (const lineup of await getLineups(NETS, 25)) {
       expect(lineup.minutes).toBeGreaterThanOrEqual(25);
       expect(lineup.shotCount).toBeGreaterThanOrEqual(0);
       expect(lineup.personIds).toHaveLength(5);
@@ -291,20 +293,20 @@ describe('GET /api/lineups shaping', () => {
   });
 
   it('orders by minutes descending', async () => {
-    const minutes = (await getLineups(25)).map((l) => l.minutes);
+    const minutes = (await getLineups(NETS, 25)).map((l) => l.minutes);
     expect([...minutes].sort((a, b) => b - a)).toEqual(minutes);
   });
 });
 
 describe('GET /api/players shaping', () => {
   it('returns a contract-valid picker payload for the full roster', async () => {
-    const players = await getPlayers();
+    const players = await getPlayers(NETS);
     expect(PlayersResponse.safeParse({ players }).success).toBe(true);
     expect(players.length).toBe(22);
   });
 
   it('orders by shot count so the UI can lead with the primary options', async () => {
-    const counts = (await getPlayers()).map((p) => p.shotCount);
+    const counts = (await getPlayers(NETS)).map((p) => p.shotCount);
     expect([...counts].sort((a, b) => b - a)).toEqual(counts);
   });
 });

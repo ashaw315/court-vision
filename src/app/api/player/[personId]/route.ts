@@ -1,16 +1,17 @@
 import { GrainResponse } from '@/lib/contracts';
 import { parsePersonId } from '@/lib/api/params';
 import { getPlayerGrain, playerExists } from '@/lib/api/queries';
+import { resolveTeamScope } from '@/lib/api/scope-request';
 import { badRequest, notFound, serverError, validated } from '@/lib/api/respond';
 
 /**
- * GET /api/player/[personId]
+ * GET /api/player/[personId]?season=2025-26&team=BKN
  *
  * One player's assist network (both directions), shot map, and assisted/unassisted split.
  * Read-only.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ personId: string }> },
 ) {
   const { personId: raw } = await params;
@@ -28,12 +29,15 @@ export async function GET(
     // Existence is checked first so an unknown id 404s instead of returning an empty
     // bundle — "this player has no shots" and "this player does not exist" are different
     // answers and the client should not have to guess which it got.
-    const displayName = await playerExists(personId);
+    const resolved = await resolveTeamScope(new URL(request.url));
+    if (!resolved.ok) return resolved.response;
+    const { scope } = resolved;
+    const displayName = await playerExists(personId, scope);
     if (displayName === null) {
-      return notFound(`No player with personId ${personId}`);
+      return notFound(`No player with personId ${personId} on this team in ${scope.season}`);
     }
 
-    const payload = await getPlayerGrain(personId, displayName);
+    const payload = await getPlayerGrain(personId, displayName, scope);
     return validated(GrainResponse, payload);
   } catch (error) {
     return serverError(error, `GET /api/player/${personId}`);

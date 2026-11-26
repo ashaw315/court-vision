@@ -60,3 +60,12 @@ describe('landing selection when switching grain', () => {
     expect(unitForGrain(null, undefined)).toBeNull();
   });
 });
+
+describe('team-season scoping', () => {
+  it('appends the season and team to every grain url', () => {
+    const scope = { season: '2025-26', team: 'BKN' };
+    expect(grainUrl('team', null, scope)).toBe('/api/team?season=2025-26&team=BKN');
+    expect(grainUrl('player', 1629008, scope)).toBe('/api/player/1629008?season=2025-26&team=BKN');
+    expect(grainUrl('lineup', '-1-2-3-4-5-', scope)).toBe('/api/lineup/-1-2-3-4-5-?season=2025-26&team=BKN');
+  });
+});

@@ -19,6 +19,7 @@ from typing import Any
 
 from nba_api.stats.endpoints import (
     boxscoretraditionalv3,
+    leaguegamelog,
     playbyplayv3,
     teamgamelog,
 )
@@ -81,6 +82,107 @@ def _cached(cache_path: pathlib.Path | None, label: str, call):
             json.dump(payload, f)
         print(f"  {label}: fetched and cached {cache_path.name}")
     return payload
+
+
+def fetch_league_games(
+    season: str, cache_dir: pathlib.Path | None = None
+) -> list[dict[str, Any]]:
+    """Every regular-season game of `season`, oldest first, one record per GAME.
+
+    One `leaguegamelog` call returns a row per team-game (two rows per game); rows are
+    folded into a single record per game carrying both team ids, so the caller can run
+    both sides of a game from ONE play-by-play and ONE boxscore fetch.
+
+    Matchup strings are taken from each side's own row ("BKN vs. DET" / "DET @ BKN"), so
+    home and away are never inferred from anything but the source.
+    """
+    cache_path = (cache_dir / f"leaguegamelog_{season}.json") if cache_dir else None
+
+    def call():
+        return leaguegamelog.LeagueGameLog(
+            season=season,
+            season_type_all_star="Regular Season",
+            player_or_team_abbreviation="T",
+            timeout=TIMEOUT_SECONDS,
+        ).get_dict()
+
+    payload = _cached(cache_path, f"leaguegamelog {season}", call)
+    return fold_league_gamelog(payload)
+
+
+def fold_league_gamelog(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Pure transform behind `fetch_league_games` (testable without the network)."""
+    result_set = payload["resultSets"][0]
+    headers = result_set["headers"]
+    rows = [dict(zip(headers, row, strict=False)) for row in result_set["rowSet"]]
+
+    by_game: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        game = by_game.setdefault(
+            row["GAME_ID"],
+            {"gameId": row["GAME_ID"], "gameDate": row["GAME_DATE"], "sides": {}},
+        )
+        game["sides"][row["TEAM_ID"]] = {
+            "teamId": row["TEAM_ID"],
+            "abbreviation": row["TEAM_ABBREVIATION"],
+            "matchup": row["MATCHUP"],
+            # "BKN vs. DET" is a home game for BKN; "BKN @ ORL" is away.
+            "home": " vs. " in row["MATCHUP"],
+        }
+
+    games = []
+    for game in by_game.values():
+        sides = list(game["sides"].values())
+        homes = sorted(s["home"] for s in sides)
+        # Neutral-site games (international games, NBA Cup knockout rounds) list both
+        # sides as "X @ Y". The log does not name a designated home team there, so it is
+        # left unset for `resolve_neutral_site` to fill from the boxscore — never guessed.
+        neutral = len(sides) == 2 and homes == [False, False]
+        if len(sides) != 2 or (homes != [False, True] and not neutral):
+            # A game missing a side, or with two homes, is a data problem to surface,
+            # not to paper over.
+            raise ValueError(
+                f"game {game['gameId']}: expected one home and one away side, got {sides}"
+            )
+        if neutral:
+            home, away = None, None
+            ordered = sides
+        else:
+            home = next(s for s in sides if s["home"])
+            away = next(s for s in sides if not s["home"])
+            ordered = [home, away]
+        games.append(
+            {
+                "gameId": game["gameId"],
+                "gameDate": game["gameDate"],
+                "homeTeamId": home["teamId"] if home else None,
+                "awayTeamId": away["teamId"] if away else None,
+                "neutralSite": neutral,
+                "sides": {
+                    s["teamId"]: {"matchup": s["matchup"], "abbreviation": s["abbreviation"]}
+                    for s in ordered
+                },
+            }
+        )
+    games.sort(key=lambda g: (g["gameDate"], g["gameId"]))
+    return games
+
+
+def resolve_neutral_site(game: dict[str, Any], boxscore: dict[str, Any]) -> dict[str, Any]:
+    """Fill a neutral-site game's home/away from the boxscore's designated teams.
+
+    The boxscore names `homeTeamId`/`awayTeamId` explicitly. They must be exactly the two
+    teams the game log listed; anything else is a source disagreement and raises.
+    Returns a new record; the input is not modified.
+    """
+    box = boxscore.get("boxScoreTraditional", boxscore)
+    home, away = box.get("homeTeamId"), box.get("awayTeamId")
+    if home is None or away is None or {home, away} != set(game["sides"]) or home == away:
+        raise ValueError(
+            f"game {game['gameId']}: boxscore home/away {home}/{away} does not match "
+            f"the game log's teams {sorted(game['sides'])}"
+        )
+    return {**game, "homeTeamId": home, "awayTeamId": away}
 
 
 def fetch_nets_game_ids(cache_dir: pathlib.Path | None = None) -> list[dict[str, str]]:

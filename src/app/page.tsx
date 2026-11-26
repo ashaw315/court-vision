@@ -1,60 +1,69 @@
-import { CourtVision } from '@/components/CourtVision';
-import { GrainResponse } from '@/lib/contracts';
-import { getSeasonScope, getTeamGrain } from '@/lib/api/queries';
-import { color } from '@/lib/design/tokens';
+import Link from 'next/link';
+
+import { label } from '@/components/analysis/Shell';
+import { getTeamSeasons } from '@/lib/api/queries';
+import { color, font } from '@/lib/design/tokens';
+import { TEAMS, teamById } from '@/lib/teams';
 
 /**
- * The instrument, landing on the team scope.
- *
- * A server component — it fetches and validates the broadest scope, then hands a plain
- * `GrainResponse` to the client component that owns grain, selection and fetching. Data is
- * read through the same query layer the API routes use, so the page and `GET /api/team`
- * cannot diverge, and the landing view costs no client round-trip.
+ * The league index: every loaded team-season, grouped by season, so any team can be opened
+ * from here. Teams that are not loaded for a season are listed but not linked — an honest
+ * gap rather than a link that 404s.
  */
-
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const [payload, scope] = await Promise.all([
-    getTeamGrain(),
-    // The validated game count every figure is summed over — read from the data.
-    getSeasonScope(),
-  ]);
+  const loaded = await getTeamSeasons();
+  const seasons = [...new Set(loaded.map((r) => r.season))].sort().reverse();
+  const key = (season: string, teamId: number) => `${season}:${teamId}`;
+  const byKey = new Map(loaded.map((r) => [key(r.season, r.teamId), r]));
 
-  // Validated here too: the component types itself against the contract, so a payload
-  // that does not satisfy it is a bug worth surfacing rather than rendering around.
-  const parsed = GrainResponse.safeParse(payload);
-  if (!parsed.success) {
-    return (
-      <Notice
-        title="Data failed contract validation"
-        detail="The team payload did not match the Phase 2 contract. See the server log."
-      />
-    );
-  }
-
-  return <CourtVision initialData={parsed.data} scope={scope} />;
-}
-
-/** Empty/error states give direction, not mood. */
-function Notice({ title, detail }: { title: string; detail: string }) {
   return (
-    <main
-      style={{
-        background: color.shell,
-        minHeight: '100vh',
-        display: 'grid',
-        placeItems: 'center',
-        padding: 24,
-      }}
-    >
-      <div style={{ maxWidth: 460, color: color.text }}>
-        <h1 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 28, margin: '0 0 8px' }}>
-          {title}
+    <main style={{ background: color.shell, minHeight: '100vh', padding: 'clamp(20px, 4vw, 48px)', color: color.ink, fontFamily: font.mono }}>
+      <div style={{ maxWidth: 1180, margin: '0 auto' }}>
+        <h1 style={{ fontFamily: font.serif, fontSize: 'clamp(34px, 6vw, 58px)', lineHeight: 0.95, margin: 0 }}>
+          Court Vision
         </h1>
-        <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, lineHeight: 1.7 }}>
-          {detail}
+        <p style={{ ...label, marginTop: 10, maxWidth: 640, lineHeight: 1.7 }}>
+          How every NBA team creates baskets: who sets up whom, where on the floor it lands, and
+          what opponents do against them. Pick a season and a team.
         </p>
+
+        {seasons.length === 0 && (
+          <p style={{ fontSize: 12, marginTop: 36 }}>No team-seasons are loaded yet.</p>
+        )}
+
+        {seasons.map((season) => (
+          <section key={season} style={{ marginTop: 40 }}>
+            <h2 style={{ fontFamily: font.serif, fontSize: 26, margin: '0 0 12px' }}>{season}</h2>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
+              {TEAMS.map((team) => {
+                const row = byKey.get(key(season, team.teamId));
+                const name = teamById(team.teamId)!;
+                return (
+                  <li key={team.teamId} style={{ fontSize: 12 }}>
+                    {row ? (
+                      <Link
+                        href={`/${season}/${team.abbreviation.toLowerCase()}`}
+                        style={{ color: color.ink, display: 'block', padding: '8px 10px', border: `1px solid ${color.rule}` }}
+                      >
+                        <strong>{team.abbreviation}</strong> {name.name}
+                        <span style={{ ...label, display: 'block', marginTop: 2 }}>
+                          {row.gamesValidated}/{row.gamesScheduled} games
+                        </span>
+                      </Link>
+                    ) : (
+                      <span style={{ color: color.muted, display: 'block', padding: '8px 10px', border: `1px dashed ${color.rule}` }}>
+                        {team.abbreviation} {name.name}
+                        <span style={{ ...label, display: 'block', marginTop: 2 }}>not loaded</span>
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))}
       </div>
     </main>
   );

@@ -1,14 +1,17 @@
 import { relations } from 'drizzle-orm';
 import {
   boolean,
+  date,
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   real,
   smallint,
   text,
+  timestamp,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -33,6 +36,44 @@ import {
  *    comment on `lineups.person_ids` below.
  */
 
+/**
+ * The 30 NBA franchises. Reference data seeded by the migration itself, keyed by the NBA's
+ * own team id so every `team_id` column in the schema joins straight to it.
+ */
+export const teams = pgTable('teams', {
+  teamId: integer('team_id').primaryKey(),
+  abbreviation: text('abbreviation').notNull().unique(),
+  city: text('city').notNull(),
+  name: text('name').notNull(),
+  conference: text('conference').notNull(),
+  division: text('division').notNull(),
+});
+
+/**
+ * One team's one season: what was scheduled, what passed validation, when it was last
+ * loaded. Replaces the single-season `SEASON_LABEL` constant and the manifest that used to
+ * live inside `data/season.json`, so the scope line and the exclusions note work per
+ * team-season.
+ */
+export const teamSeasons = pgTable(
+  'team_seasons',
+  {
+    season: text('season').notNull(),
+    teamId: integer('team_id')
+      .notNull()
+      .references(() => teams.teamId),
+    seasonType: text('season_type').notNull().default('Regular Season'),
+    gamesScheduled: integer('games_scheduled').notNull(),
+    gamesValidated: integer('games_validated').notNull(),
+    gamesExcluded: integer('games_excluded').notNull(),
+    /** When the ETL output for this team-season was last loaded. */
+    lastLoadedAt: timestamp('last_loaded_at', { withTimezone: true }),
+    /** The ETL's failure list for this team-season, kept as reported. */
+    failures: jsonb('failures').$type<unknown[]>().notNull().default([]),
+  },
+  (table) => [primaryKey({ columns: [table.season, table.teamId] })],
+);
+
 /** A player. `personId` is the only join key anywhere — never a name. */
 export const players = pgTable('players', {
   personId: integer('person_id').primaryKey(),
@@ -40,16 +81,78 @@ export const players = pgTable('players', {
 });
 
 /**
- * One Nets game. Only the 72 games that passed Phase 3 validation are loaded; the 10 that
- * failed are excluded rather than partially represented.
+ * One game. A game exists once however many of its two sides were loaded; which sides
+ * passed validation is recorded per side in `game_team_validation`.
  */
-export const games = pgTable('games', {
-  gameId: text('game_id').primaryKey(),
-  /** As the source reports it, e.g. "NOV 07, 2025". Kept verbatim rather than parsed. */
-  gameDate: text('game_date'),
-  /** e.g. "BKN vs. DET" / "BKN @ CHA". */
-  matchup: text('matchup'),
-});
+export const games = pgTable(
+  'games',
+  {
+    gameId: text('game_id').primaryKey(),
+    season: text('season').notNull(),
+    /** As the source reports it, e.g. "NOV 07, 2025". Kept verbatim. */
+    gameDate: text('game_date'),
+    /** The same date as a real date, for ordering and the season timeline. */
+    playedOn: date('played_on'),
+    /** e.g. "BKN vs. DET" / "BKN @ CHA". */
+    matchup: text('matchup'),
+    homeTeamId: integer('home_team_id')
+      .notNull()
+      .references(() => teams.teamId),
+    awayTeamId: integer('away_team_id')
+      .notNull()
+      .references(() => teams.teamId),
+  },
+  (table) => [
+    index('games_season_idx').on(table.season),
+    index('games_home_idx').on(table.season, table.homeTeamId),
+    index('games_away_idx').on(table.season, table.awayTeamId),
+  ],
+);
+
+/**
+ * Validation is per SIDE of a game: one team's substitution clocks can be contradictory
+ * while the other's are clean, so a game can pass for one team and fail for the other.
+ */
+export const gameTeamValidation = pgTable(
+  'game_team_validation',
+  {
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.gameId, { onDelete: 'cascade' }),
+    teamId: integer('team_id')
+      .notNull()
+      .references(() => teams.teamId),
+    season: text('season').notNull(),
+    passed: boolean('passed').notNull(),
+    /** Why a side failed; empty when it passed. */
+    reasons: jsonb('reasons').$type<string[]>().notNull().default([]),
+  },
+  (table) => [
+    primaryKey({ columns: [table.gameId, table.teamId] }),
+    index('game_team_validation_team_idx').on(table.season, table.teamId),
+  ],
+);
+
+/**
+ * Who was on which team in which season. A traded player has two rows in one season, which
+ * is what keeps his networks with each team separate.
+ */
+export const playerTeamSeasons = pgTable(
+  'player_team_seasons',
+  {
+    personId: integer('person_id')
+      .notNull()
+      .references(() => players.personId),
+    teamId: integer('team_id')
+      .notNull()
+      .references(() => teams.teamId),
+    season: text('season').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.personId, table.teamId, table.season] }),
+    index('player_team_seasons_team_idx').on(table.season, table.teamId),
+  ],
+);
 
 /**
  * A five-man unit that cleared the ETL emit floor (25 minutes).
@@ -68,9 +171,15 @@ export const games = pgTable('games', {
  * verification step asserts zero orphans. If lineups ever gained per-player attributes,
  * the join table would become the right answer.
  */
-export const lineups = pgTable('lineups', {
+export const lineups = pgTable(
+  'lineups',
+  {
+  season: text('season').notNull(),
+  teamId: integer('team_id')
+    .notNull()
+    .references(() => teams.teamId),
   /** Dash-delimited sorted person ids, e.g. "-1629008-1629611-...-". */
-  groupId: text('group_id').primaryKey(),
+  groupId: text('group_id').notNull(),
   /** Exactly 5, sorted ascending. Enforced by the contract at the seed boundary. */
   personIds: integer('person_ids').array().notNull(),
   /**
@@ -81,7 +190,9 @@ export const lineups = pgTable('lineups', {
    */
   minutes: doublePrecision('minutes').notNull(),
   displayNames: text('display_names').array().notNull(),
-});
+  },
+  (table) => [primaryKey({ columns: [table.season, table.teamId, table.groupId] })],
+);
 
 /**
  * A contiguous stretch of one game with a fixed five on court.
@@ -97,16 +208,23 @@ export const lineupIntervals = pgTable(
     gameId: text('game_id')
       .notNull()
       .references(() => games.gameId, { onDelete: 'cascade' }),
+    season: text('season').notNull(),
+    teamId: integer('team_id')
+      .notNull()
+      .references(() => teams.teamId),
     period: smallint('period').notNull(),
     /** ISO-8601 durations, kept raw ("PT11M41.00S"); parsing is an edge concern. */
     startClock: text('start_clock').notNull(),
     endClock: text('end_clock').notNull(),
     /** The five on court, sorted. Same array rationale as `lineups.person_ids`. */
     onCourt: integer('on_court').array().notNull(),
+    /** Stored so lineup minutes can be summed in SQL across games and seasons. */
+    durationSeconds: doublePrecision('duration_seconds').notNull(),
   },
   (table) => [
     // Phase 5 reads a game's intervals in order to render its timeline.
     index('lineup_intervals_game_idx').on(table.gameId),
+    index('lineup_intervals_team_idx').on(table.season, table.teamId),
   ],
 );
 
@@ -124,6 +242,7 @@ export const shotEvents = pgTable(
     gameId: text('game_id')
       .notNull()
       .references(() => games.gameId, { onDelete: 'cascade' }),
+    season: text('season').notNull(),
     eventId: integer('event_id').notNull(),
     period: smallint('period').notNull(),
     clock: text('clock').notNull(),
@@ -151,7 +270,10 @@ export const shotEvents = pgTable(
 
     actionType: text('action_type').notNull(),
     subType: text('sub_type').notNull(),
-    teamId: integer('team_id').notNull(),
+    /** The SHOOTER's team. A team's shots allowed are the shots in its games by the other side. */
+    teamId: integer('team_id')
+      .notNull()
+      .references(() => teams.teamId),
 
     /**
      * The lineup on court for this shot. NULLABLE by design: null means the five could
@@ -169,6 +291,8 @@ export const shotEvents = pgTable(
     index('shot_events_shooter_idx').on(table.shooterId), // player grain
     index('shot_events_interval_idx').on(table.intervalId), // lineup grain
     index('shot_events_game_idx').on(table.gameId), // per-game / date filtering
+    index('shot_events_team_season_idx').on(table.season, table.teamId), // team grain
+    index('shot_events_team_season_shooter_idx').on(table.season, table.teamId, table.shooterId),
   ],
 );
 
@@ -185,6 +309,10 @@ export const shotEvents = pgTable(
 export const assistEdges = pgTable(
   'assist_edges',
   {
+    season: text('season').notNull(),
+    teamId: integer('team_id')
+      .notNull()
+      .references(() => teams.teamId),
     assisterId: integer('assister_id')
       .notNull()
       .references(() => players.personId),
@@ -200,7 +328,7 @@ export const assistEdges = pgTable(
   },
   (table) => [
     // One row per ordered pair; the direction is the data, so the PK is the pair.
-    primaryKey({ columns: [table.assisterId, table.shooterId] }),
+    primaryKey({ columns: [table.season, table.teamId, table.assisterId, table.shooterId] }),
     index('assist_edges_assister_idx').on(table.assisterId),
     index('assist_edges_shooter_idx').on(table.shooterId),
   ],

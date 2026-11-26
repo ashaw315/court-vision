@@ -8,6 +8,13 @@
       "when": 1785422782673,
       "tag": "0000_glossy_blue_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795660314302,
+      "tag": "0001_all_teams_seasons",
+      "breakpoints": true
     }
   ]
 }

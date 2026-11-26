@@ -214,16 +214,17 @@ export function InfoPanel({
         <SectionMark>§ III / ABOUT THE DATA</SectionMark>
         <Prose>
           NBA play-by-play, {scope ? `${scope.season} ${scope.seasonType.toLowerCase()}` : 'current season'}.
-          Made, assisted baskets only — this tool is about created scoring, so missed shots and
-          attempts are out of scope. Self-created baskets appear only inside the node-fill
-          split.
+          Made, assisted baskets only — this view is about created scoring, so missed shots and
+          attempts are left to the analysis page. Self-created baskets appear only inside the
+          node-fill split.
         </Prose>
         {scope && scope.excludedGames > 0 && (
           <Prose>
             <strong>{scope.games} of {scope.scheduledGames} games.</strong>{' '}
-            {scope.excludedGames} were excluded because their substitution timestamps
-            contradict each other in the source feed. Rather than guess which five players
-            were on the floor, those games were left out.
+            {scope.excludedGames} {scope.excludedGames === 1 ? 'was' : 'were'} excluded because
+            they failed a validation check — most often substitution timestamps that contradict
+            each other in the source feed. Rather than guess which five players were on the
+            floor, those games were left out; the analysis page lists each one and its reason.
           </Prose>
         )}
         <Prose>

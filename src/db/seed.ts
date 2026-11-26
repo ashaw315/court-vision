@@ -13,15 +13,61 @@ import {
   ShotEvent,
 } from '@/lib/contracts';
 
+import { NETS_TEAM_ID, teamByAbbreviation } from '@/lib/teams';
+
 import { databaseUrl } from './env';
 import {
   assistEdges,
+  gameTeamValidation,
   games,
   lineupIntervals,
   lineups,
+  playerTeamSeasons,
   players,
   shotEvents,
+  teamSeasons,
 } from './schema';
+
+/**
+ * The committed sample is one team-season: the Nets' 2025-26 regular season. The dataset
+ * predates multi-team support, so season and team are supplied here rather than read from
+ * the JSON. The full-league loader (`db:load`) takes them from the ETL output instead.
+ */
+const SEASON = '2025-26';
+const TEAM_ID = NETS_TEAM_ID;
+
+const MONTHS: Record<string, string> = {
+  JAN: '01', FEB: '02', MAR: '03', APR: '04', MAY: '05', JUN: '06',
+  JUL: '07', AUG: '08', SEP: '09', OCT: '10', NOV: '11', DEC: '12',
+};
+
+/** `'NOV 07, 2025'` -> `'2025-11-07'`. */
+function playedOn(gameDate: string | null): string {
+  if (gameDate === null) throw new Error('game without a date cannot be placed in a season');
+  const match = /^([A-Z]{3}) (\d{2}), (\d{4})$/.exec(gameDate);
+  if (!match || !MONTHS[match[1]]) throw new Error(`unparseable game date: ${gameDate}`);
+  return `${match[3]}-${MONTHS[match[1]]}-${match[2]}`;
+}
+
+/** `'BKN vs. DET'` is a home game for BKN; `'BKN @ ORL'` is away. */
+function homeAway(matchup: string | null): { homeTeamId: number; awayTeamId: number } {
+  if (matchup === null) throw new Error('game without a matchup has no home or away side');
+  const match = /^([A-Z]{2,3}) (vs\.|@) ([A-Z]{2,3})$/.exec(matchup);
+  const self = match && teamByAbbreviation(match[1]);
+  const other = match && teamByAbbreviation(match[3]);
+  if (!match || !self || !other) throw new Error(`unparseable matchup: ${matchup}`);
+  return match[2] === 'vs.'
+    ? { homeTeamId: self.teamId, awayTeamId: other.teamId }
+    : { homeTeamId: other.teamId, awayTeamId: self.teamId };
+}
+
+/** ISO clock `'PT05M18.00S'` -> seconds remaining. */
+function clockSeconds(clock: string | null): number {
+  if (clock === null) throw new Error('interval with a null clock cannot be timed');
+  const match = /^PT(\d+)M(\d+(?:\.\d+)?)S$/.exec(clock);
+  if (!match) throw new Error(`unparseable clock: ${clock}`);
+  return Number(match[1]) * 60 + Number(match[2]);
+}
 
 /**
  * Seeds Neon from the committed season dataset.
@@ -157,7 +203,8 @@ async function main(): Promise<void> {
   // serial columns) but keeps the statement correct if one is ever added.
   console.log('truncating (idempotent reload):');
   await db.execute(
-    'TRUNCATE TABLE shot_events, assist_edges, lineup_intervals, lineups, games, players '
+    'TRUNCATE TABLE shot_events, assist_edges, lineup_intervals, lineups, '
+      + 'game_team_validation, player_team_seasons, team_seasons, games, players '
       + 'RESTART IDENTITY CASCADE',
   );
   console.log('  all tables cleared\n');
@@ -169,11 +216,69 @@ async function main(): Promise<void> {
     db.insert(players).values(batch));
 
   await insertBatched('games', gameRows, (batch) =>
-    db.insert(games).values(batch));
+    db.insert(games).values(
+      batch.map((game) => ({
+        gameId: game.gameId,
+        season: SEASON,
+        gameDate: game.gameDate,
+        playedOn: playedOn(game.gameDate),
+        matchup: game.matchup,
+        ...homeAway(game.matchup),
+      })),
+    ));
+
+  // Schedule size and the excluded games come from the ETL run manifest shipped with the
+  // dataset, so the loaded team-season states 72 of 82 — not 72 of 72.
+  const manifest = z
+    .object({
+      gamesInSchedule: z.number().int(),
+      failedValidation: z.array(z.object({ gameId: z.string(), reasons: z.array(z.string()) })),
+    })
+    .parse(raw.manifest);
+  const failures = manifest.failedValidation.map((f) => ({
+    gameId: f.gameId,
+    passed: false,
+    // The check name only; the full diagnostic stays in the manifest.
+    reasons: f.reasons.map((r) => r.replace(/^check failed: /, '').replace(/ \([\s\S]*$/, '')).slice(0, 1),
+  }));
+
+  await insertBatched('team_seasons', [{ season: SEASON, teamId: TEAM_ID }], (batch) =>
+    db.insert(teamSeasons).values(
+      batch.map((row) => ({
+        ...row,
+        gamesScheduled: manifest.gamesInSchedule,
+        gamesValidated: gameRows.length,
+        gamesExcluded: failures.length,
+        lastLoadedAt: new Date(),
+        failures,
+      })),
+    ));
+
+  await insertBatched('game_team_validation', gameRows, (batch) =>
+    db.insert(gameTeamValidation).values(
+      batch.map((game) => ({
+        gameId: game.gameId,
+        teamId: TEAM_ID,
+        season: SEASON,
+        passed: true,
+        reasons: [],
+      })),
+    ));
+
+  await insertBatched('player_team_seasons', playerRows, (batch) =>
+    db.insert(playerTeamSeasons).values(
+      batch.map((player) => ({
+        personId: player.personId,
+        teamId: TEAM_ID,
+        season: SEASON,
+      })),
+    ));
 
   await insertBatched('lineups', lineupRows, (batch) =>
     db.insert(lineups).values(
       batch.map((lineup) => ({
+        season: SEASON,
+        teamId: TEAM_ID,
         groupId: lineup.groupId,
         personIds: [...lineup.personIds],
         minutes: lineup.minutes,
@@ -184,6 +289,9 @@ async function main(): Promise<void> {
   await insertBatched('lineup_intervals', intervalRows, (batch) =>
     db.insert(lineupIntervals).values(
       batch.map((interval) => ({
+        season: SEASON,
+        teamId: TEAM_ID,
+        durationSeconds: clockSeconds(interval.startClock) - clockSeconds(interval.endClock),
         intervalId: interval.intervalId,
         gameId: interval.gameId,
         period: interval.period,
@@ -197,6 +305,7 @@ async function main(): Promise<void> {
   await insertBatched('shot_events', shotRows, (batch) =>
     db.insert(shotEvents).values(
       batch.map((shot) => ({
+        season: SEASON,
         gameId: shot.gameId,
         eventId: shot.eventId,
         period: shot.period,
@@ -218,7 +327,9 @@ async function main(): Promise<void> {
     ));
 
   await insertBatched('assist_edges', edgeRows, (batch) =>
-    db.insert(assistEdges).values(batch));
+    db.insert(assistEdges).values(
+      batch.map((edge) => ({ ...edge, season: SEASON, teamId: TEAM_ID })),
+    ));
 
   console.log('\nseed complete — run `npm run db:verify` to check it against the JSON');
 }

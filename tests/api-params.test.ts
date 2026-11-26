@@ -113,3 +113,21 @@ describe('finding 3: groupId parsing', () => {
     expect(parseGroupId(scrambled)).toEqual({ ok: true, value: scrambled });
   });
 });
+
+import { parseSeason } from '@/lib/api/params';
+
+describe('parseSeason', () => {
+  it('defaults when absent or empty', () => {
+    expect(parseSeason(null, '2025-26')).toEqual({ ok: true, value: '2025-26' });
+    expect(parseSeason('', '2025-26')).toEqual({ ok: true, value: '2025-26' });
+  });
+  it('accepts consecutive-year labels', () => {
+    expect(parseSeason('2023-24', 'x')).toEqual({ ok: true, value: '2023-24' });
+    expect(parseSeason('1999-00', 'x').ok).toBe(true);
+  });
+  it('rejects malformed or non-consecutive labels', () => {
+    for (const bad of ['2025', '2025-27', '25-26', '2025/26', 'abc']) {
+      expect(parseSeason(bad, 'x').ok).toBe(false);
+    }
+  });
+});

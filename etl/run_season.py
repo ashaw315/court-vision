@@ -1,6 +1,9 @@
-"""Stage 3: run the whole Nets regular season through the validated pipeline.
+"""Stage 3: run a league season through the validated pipeline, for any set of teams.
 
-    .venv/bin/python etl/run_season.py [--limit N] [--force]
+    .venv/bin/python etl/run_season.py --season 2025-26 [--teams BKN,BOS] [--limit N] [--force]
+
+Each game is fetched ONCE (play-by-play + boxscores) and both sides are processed from
+that single fetch, so a full league season is ~1,230 games of requests, not 2,460.
 
 This adds no transform logic. Each game goes through exactly the stage-1/2 path
 (fetch -> roster -> intervals -> shot events -> verify_game), and this script handles
@@ -34,11 +37,11 @@ import traceback
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from nba_client import (  # noqa: E402
-    NETS_TEAM_ID,
     fetch_boxscore,
-    fetch_nets_game_ids,
+    fetch_league_games,
     fetch_period_boxscores,
     fetch_play_by_play,
+    resolve_neutral_site,
 )
 from season import aggregate_season  # noqa: E402
 from transforms.lineup_intervals import build_lineup_intervals  # noqa: E402
@@ -57,48 +60,57 @@ from verify import verify_game  # noqa: E402
 REPO = pathlib.Path(__file__).resolve().parents[1]
 CACHE = REPO / "etl" / "cache"
 OUT = REPO / "etl" / "out"
-GAMES_DIR = OUT / "games"
 
 
-def process_game(game_id: str) -> dict:
-    """Run ONE game through the validated pipeline. Returns the payload + verification.
+def process_game(game_id: str, team_ids: list[int]) -> dict[int, dict]:
+    """Run ONE game through the validated pipeline for each requested team.
 
-    Raises on an unrecoverable error; the caller logs and continues.
+    The network fetches happen once; each team is then processed independently, so one
+    side failing verification never touches the other. Returns {team_id: payload}.
+    A team missing from the boxscore raises for the whole game — that is a source
+    problem, not a per-team one.
     """
     actions = fetch_play_by_play(game_id, cache_dir=CACHE)
     boxscore = fetch_boxscore(game_id, cache_dir=CACHE)
     periods = sorted({a["period"] for a in actions if a.get("period")})
     period_boxscores = fetch_period_boxscores(game_id, periods, cache_dir=CACHE)
-
     rosters = build_rosters_from_boxscore(boxscore)
-    if NETS_TEAM_ID not in rosters:
-        raise ValueError(f"Nets absent from boxscore (teams: {sorted(rosters)})")
-    team = rosters[NETS_TEAM_ID]
 
-    participation = build_period_rosters_from_boxscores(period_boxscores, NETS_TEAM_ID)
+    payloads: dict[int, dict] = {}
+    for team_id in team_ids:
+        if team_id not in rosters:
+            raise ValueError(f"team {team_id} absent from boxscore (teams: {sorted(rosters)})")
+        payloads[team_id] = _process_team(
+            game_id, team_id, rosters[team_id], actions, boxscore, period_boxscores, periods
+        )
+    return payloads
+
+
+def _process_team(game_id, team_id, team, actions, boxscore, period_boxscores, periods) -> dict:
+    participation = build_period_rosters_from_boxscores(period_boxscores, team_id)
 
     intervals, interval_warnings = build_lineup_intervals(
-        actions, game_id, NETS_TEAM_ID, team.roster,
+        actions, game_id, team_id, team.roster,
         starters=team.starters, period_participation=participation,
         return_warnings=True,
     )
     shot_events, shot_warnings = build_shot_events(
-        actions, game_id, NETS_TEAM_ID, team.roster,
+        actions, game_id, team_id, team.roster,
         intervals=intervals, return_warnings=True,
     )
     edges = build_assist_edges(shot_events)
     split = assisted_split(shot_events)
 
     report = verify_game(
-        shot_events, intervals, actions, NETS_TEAM_ID, team.starters,
+        shot_events, intervals, actions, team_id, team.starters,
         set(team.roster.by_person_id),
-        boxscore_seconds=boxscore_seconds_by_player(boxscore, NETS_TEAM_ID),
+        boxscore_seconds=boxscore_seconds_by_player(boxscore, team_id),
     )
 
     warnings = interval_warnings + shot_warnings
     return {
         "gameId": game_id,
-        "teamId": NETS_TEAM_ID,
+        "teamId": team_id,
         "periods": periods,
         "shotEvents": shot_events,
         "assistEdges": edges,
@@ -139,6 +151,20 @@ def process_game(game_id: str) -> dict:
     }
 
 
+def format_team_game(label: str, abbr: str, payload: dict, cached: bool = False) -> list[str]:
+    """Progress lines for one team-game: ok/FAIL with counts, then each failing check.
+
+    Used for fresh and cached games alike, so a re-run still shows every excluded game
+    and why.
+    """
+    reasons = game_failures(payload)
+    counts = payload["verification"]["counts"]
+    tag = "ok  " if not reasons else "FAIL"
+    head = (f"{label}  {abbr} {tag} shots={counts['shots']:>3} "
+            f"intervals={counts['intervals']:>3}" + ("  (cached)" if cached else ""))
+    return [head] + [f"       !! {reason}" for reason in reasons]
+
+
 def game_failures(payload: dict) -> list[str]:
     """The specific reasons this game failed validation. Empty means it passed."""
     reasons = [
@@ -155,114 +181,188 @@ def game_failures(payload: dict) -> list[str]:
     return reasons
 
 
+def _iso_to_catalog_date(iso: str) -> str:
+    """'2025-11-07' -> 'NOV 07, 2025' (the form the loaded games table already uses)."""
+    year, month, day = iso[:10].split("-")
+    names = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+             "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+    return f"{names[int(month) - 1]} {day}, {year}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--season", required=True, help="e.g. 2025-26")
+    parser.add_argument("--teams", default=None,
+                        help="comma-separated abbreviations (default: all 30)")
     parser.add_argument("--limit", type=int, default=None,
                         help="process at most N games (smoke-test the loop)")
     parser.add_argument("--force", action="store_true",
                         help="reprocess games that already have persisted output")
     args = parser.parse_args()
 
-    GAMES_DIR.mkdir(parents=True, exist_ok=True)
+    season = args.season
+    season_dir = OUT / season
+    games_dir = season_dir / "games"
+    teams_dir = season_dir / "teams"
+    games_dir.mkdir(parents=True, exist_ok=True)
+    teams_dir.mkdir(parents=True, exist_ok=True)
 
-    print("=== Stage 3: full season run ===\n")
-    games = fetch_nets_game_ids(cache_dir=CACHE)
+    print(f"=== Stage 3: {season} season run ===\n")
+    schedule = fetch_league_games(season, cache_dir=CACHE)
+
+    abbreviations: dict[int, str] = {}
+    for game in schedule:
+        for team_id, side in game["sides"].items():
+            abbreviations[team_id] = side["abbreviation"]
+    wanted_abbr = (
+        {t.strip().upper() for t in args.teams.split(",")} if args.teams else None
+    )
+    if wanted_abbr:
+        unknown = wanted_abbr - set(abbreviations.values())
+        if unknown:
+            print(f"unknown team abbreviation(s): {sorted(unknown)}")
+            return 2
+    wanted_ids = {
+        tid for tid, abbr in abbreviations.items()
+        if wanted_abbr is None or abbr in wanted_abbr
+    }
+
+    # Only games involving a requested team are worth fetching.
+    games = [g for g in schedule if wanted_ids & set(g["sides"])]
     if args.limit:
         games = games[: args.limit]
-    print(f"{len(games)} regular-season games\n")
+    print(f"{len(games)} games involve the requested teams "
+          f"({len(wanted_ids)} team(s))\n")
 
-    succeeded: list[str] = []
-    failed: list[tuple[str, list[str]]] = []
-    errored: list[tuple[str, str]] = []
-    payloads: list[dict] = []
+    payloads: dict[int, list[dict]] = collections.defaultdict(list)
+    errored: list[tuple[str, int, str]] = []
+    game_records: dict[str, dict] = {}
 
     for index, game in enumerate(games, start=1):
         game_id = game["gameId"]
-        label = f"[{index:>2}/{len(games)}] {game_id} {game['gameDate']:>13} {game['matchup']}"
-        out_path = GAMES_DIR / f"{game_id}.json"
+        sides = {tid: s for tid, s in game["sides"].items() if tid in wanted_ids}
+        label = f"[{index:>4}/{len(games)}] {game_id} {game['gameDate']}"
+        if game["neutralSite"]:
+            # The game log does not designate a home team here; the boxscore does.
+            try:
+                game = resolve_neutral_site(game, fetch_boxscore(game_id, cache_dir=CACHE))
+            except Exception as error:  # noqa: BLE001 - one bad game must not end the run
+                message = f"{type(error).__name__}: {error}"
+                for team_id in sides:
+                    errored.append((game_id, team_id, message))
+                print(f"{label}  ERROR  {message}")
+                continue
+        game_records[game_id] = {
+            "gameId": game_id,
+            "season": season,
+            "gameDate": _iso_to_catalog_date(game["gameDate"]),
+            "playedOn": game["gameDate"][:10],
+            "matchup": next(iter(game["sides"].values()))["matchup"],
+            "homeTeamId": game["homeTeamId"],
+            "awayTeamId": game["awayTeamId"],
+            "neutralSite": game["neutralSite"],
+        }
 
-        # Checkpoint: a completed game is skipped entirely on a re-run.
-        if out_path.exists() and not args.force:
-            with open(out_path) as f:
-                payload = json.load(f)
-            payloads.append(payload)
-            reasons = game_failures(payload)
-            status = "cached OK" if not reasons else f"cached FAIL ({len(reasons)})"
-            if reasons:
-                failed.append((game_id, reasons))
+        # Checkpoint per team-game; fetch only if some requested side is missing.
+        todo = []
+        for team_id in sides:
+            path = games_dir / f"{game_id}_{team_id}.json"
+            if path.exists() and not args.force:
+                with open(path) as f:
+                    cached = json.load(f)
+                payloads[team_id].append(cached)
+                for line in format_team_game(label, abbreviations[team_id], cached, cached=True):
+                    print(line)
             else:
-                succeeded.append(game_id)
-            print(f"{label}  {status}")
+                todo.append(team_id)
+        if not todo:
             continue
 
         try:
-            payload = process_game(game_id)
+            fresh = process_game(game_id, todo)
         except KeyboardInterrupt:
             print("\n\ninterrupted — completed games are persisted; re-run to resume")
             return 130
         except Exception as error:  # noqa: BLE001 - one bad game must not end the run
             message = f"{type(error).__name__}: {error}"
-            errored.append((game_id, message))
+            for team_id in todo:
+                errored.append((game_id, team_id, message))
             print(f"{label}  ERROR  {message}")
             traceback.print_exc(limit=2)
             continue
 
-        # Persist BEFORE judging, so a verification failure is still resumable and
-        # inspectable rather than needing a re-fetch.
-        with open(out_path, "w") as f:
-            json.dump(payload, f)
-        payloads.append(payload)
+        for team_id, payload in fresh.items():
+            # Persist BEFORE judging, so a verification failure is still resumable and
+            # inspectable rather than needing a re-fetch.
+            with open(games_dir / f"{game_id}_{team_id}.json", "w") as f:
+                json.dump(payload, f)
+            payloads[team_id].append(payload)
+            for line in format_team_game(label, abbreviations[team_id], payload):
+                print(line)
 
-        reasons = game_failures(payload)
-        counts = payload["verification"]["counts"]
-        summary = (
-            f"shots={counts['shots']:>3} attributed={counts['attributed']:>3} "
-            f"intervals={counts['intervals']:>3} P={len(payload['periods'])}"
-        )
-        if reasons:
-            failed.append((game_id, reasons))
-            print(f"{label}  FAIL   {summary}")
-            for reason in reasons:
-                print(f"       !! {reason}")
-        else:
-            succeeded.append(game_id)
-            extra = ""
-            if payload["signals"]["overtime"]:
-                extra += f" OT{payload['signals']['overtime']}"
-            if payload["signals"]["ambiguousAssister"]:
-                extra += f" ambig×{len(payload['signals']['ambiguousAssister'])}"
-            print(f"{label}  ok     {summary}{extra}")
+    # ---------------- per-team season aggregate ----------------
+    manifest_teams: dict[str, dict] = {}
+    for team_id in sorted(payloads, key=lambda t: abbreviations[t]):
+        abbr = abbreviations[team_id]
+        team_payloads = payloads[team_id]
+        valid = [p for p in team_payloads if not game_failures(p)]
+        failed = [
+            {"gameId": p["gameId"], "reasons": game_failures(p)}
+            for p in team_payloads if game_failures(p)
+        ]
+        fetch_errors = [
+            {"gameId": g, "error": e} for g, t, e in errored if t == team_id
+        ]
+        aggregate = aggregate_season(valid)
+        team_games = [
+            game_records[p["gameId"]] for p in sorted(
+                team_payloads, key=lambda p: game_records[p["gameId"]]["playedOn"])
+        ]
+        out = {
+            "season": season,
+            "teamId": team_id,
+            "abbreviation": abbr,
+            "scheduled": len(team_payloads) + len(fetch_errors),
+            "games": team_games,
+            # One audit row per team-game — passed or not, with the reasons.
+            "validation": [
+                {
+                    "gameId": p["gameId"],
+                    "teamId": team_id,
+                    "passed": not game_failures(p),
+                    "reasons": game_failures(p),
+                }
+                for p in team_payloads
+            ] + [
+                {"gameId": e["gameId"], "teamId": team_id, "passed": False,
+                 "reasons": [f"fetch error: {e['error']}"]}
+                for e in fetch_errors
+            ],
+            "aggregate": aggregate,
+            "longTail": _long_tail(team_payloads),
+        }
+        with open(teams_dir / f"{abbr}.json", "w") as f:
+            json.dump(out, f)
+        manifest_teams[abbr] = {
+            "scheduled": out["scheduled"],
+            "validated": len(valid),
+            "excluded": len(failed) + len(fetch_errors),
+            "failedValidation": failed,
+            "erroredFetching": fetch_errors,
+            "honesty": aggregate["honesty"],
+        }
+        print(f"{abbr}: {len(valid)}/{out['scheduled']} games validated "
+              f"-> {(teams_dir / (abbr + '.json')).relative_to(REPO)}")
 
-    # ---------------- season aggregate ----------------
-    valid = [p for p in payloads if not game_failures(p)]
-    season = aggregate_season(valid)
-
-    season_path = OUT / "season.json"
-    with open(season_path, "w") as f:
-        json.dump(season, f)
-
-    manifest = {
-        "gamesInSchedule": len(games),
-        "succeeded": succeeded,
-        "failedValidation": [
-            {"gameId": g, "reasons": r} for g, r in failed
-        ],
-        "erroredFetching": [{"gameId": g, "error": e} for g, e in errored],
-        "aggregatedFrom": len(valid),
-        "honesty": season["honesty"],
-        "longTail": _long_tail(payloads),
-    }
-    manifest_path = OUT / "season_manifest.json"
+    manifest_path = season_dir / "manifest.json"
     with open(manifest_path, "w") as f:
-        json.dump(manifest, f, indent=2)
+        json.dump({"season": season, "teams": manifest_teams}, f, indent=2)
+    print(f"\nwrote {manifest_path.relative_to(REPO)}")
 
-    _print_report(manifest, season, len(games))
-    print(f"\nwrote {season_path.relative_to(REPO)}")
-    print(f"wrote {manifest_path.relative_to(REPO)}")
-    print(f"per-game output in {GAMES_DIR.relative_to(REPO)}/ ({len(payloads)} files)")
-
-    # Non-zero if anything failed — a partial dataset must not read as a clean run.
-    return 0 if not (failed or errored) else 1
+    # Exclusions are reported, never fatal: a team-game that fails validation is left out
+    # of that team's numbers and listed in its audit table. Only fetch errors are an
+    # incomplete run that should be repeated.
+    return 0 if not errored else 1
 
 
 def _long_tail(payloads: list[dict]) -> dict:
@@ -273,86 +373,6 @@ def _long_tail(payloads: list[dict]) -> dict:
             if hits:
                 tally[key].append(payload["gameId"])
     return dict(tally)
-
-
-def _print_report(manifest: dict, season: dict, scheduled: int) -> None:
-    honesty = manifest["honesty"]
-    print("\n" + "=" * 72)
-    print("SEASON HONESTY REPORT")
-    print("=" * 72)
-    print(f"  games in schedule          {scheduled}")
-    print(f"  succeeded                  {len(manifest['succeeded'])}")
-    print(f"  failed validation          {len(manifest['failedValidation'])}")
-    print(f"  errored fetching           {len(manifest['erroredFetching'])}")
-    print(f"  aggregated from            {manifest['aggregatedFrom']} games")
-    print()
-    print(f"  shot events                {honesty['shots']}")
-    cov = honesty["attributionCoverage"]
-    print(f"  attributed to a lineup     {honesty['attributed']}"
-          + (f"  ({cov:.2%})" if cov is not None else ""))
-    print()
-    print(f"  made baskets               {honesty['madeBaskets']}")
-    print(f"  assisted                   {honesty['assisted']}")
-    print(f"  self-created               {honesty['selfCreated']}")
-    print(f"  unresolved assister        {honesty['unresolvedAssisted']}"
-          "   <- never guessed")
-    pct = honesty["assistedPct"]
-    if pct is not None:
-        low, high = honesty["assistedPctSanityRange"]
-        verdict = "plausible" if honesty["assistedPctPlausible"] else "*** IMPLAUSIBLE ***"
-        print(f"  assisted share             {pct:.1%}  (sanity {low:.0%}-{high:.0%}: {verdict})")
-    print()
-    print(f"  assist edges               {honesty['assistEdges']}")
-    print(f"  lineup intervals           {honesty['lineupIntervals']}")
-    print(f"  lineups emitted (>= {honesty['lineupEmitFloorMinutes']:.0f} min)  "
-          f"{honesty['lineupsEmitted']}")
-    # The frontend applies its own display threshold; show what it has to work with.
-    for display_threshold in (50, 40, 30):
-        above = sum(
-            1 for lu in season["lineups"] if lu["minutes"] >= display_threshold
-        )
-        print(f"    of which >= {display_threshold} min        {above}")
-    print(f"  players                    {honesty['players']}")
-
-    print("\n" + "-" * 72)
-    print("LONG TAIL (games that triggered each case)")
-    print("-" * 72)
-    labels = {
-        "overtime": "overtime (periods > 4)",
-        "ambiguousAssister": "ambiguous assister -> null (never guessed)",
-        "unresolvedAssister": "unresolved assister -> null",
-        "substitutionAnomaly": "substitution anomaly",
-        "openerDisagreement": "boxscore/observation disagreement",
-        "ghostPlayers": "acted but absent from boxscore participation",
-    }
-    tail = manifest["longTail"]
-    for key, label in labels.items():
-        hits = tail.get(key, [])
-        print(f"  {label:<48} {len(hits):>3} game(s)")
-        if hits:
-            print(f"       {', '.join(hits[:8])}{' ...' if len(hits) > 8 else ''}")
-
-    if manifest["failedValidation"] or manifest["erroredFetching"]:
-        print("\n" + "-" * 72)
-        print("FAILURE MANIFEST")
-        print("-" * 72)
-        for entry in manifest["failedValidation"]:
-            print(f"  {entry['gameId']}  VALIDATION")
-            for reason in entry["reasons"]:
-                print(f"      {reason}")
-        for entry in manifest["erroredFetching"]:
-            print(f"  {entry['gameId']}  FETCH  {entry['error']}")
-    else:
-        print("\n  no failures")
-
-    top = season["lineups"][:5]
-    if top:
-        print("\n" + "-" * 72)
-        print("TOP FIVE-MAN UNITS BY MINUTES")
-        print("-" * 72)
-        for lineup in top:
-            names = ", ".join(lineup["displayNames"])
-            print(f"  {lineup['minutes']:>7.1f} min  {names}")
 
 
 if __name__ == "__main__":

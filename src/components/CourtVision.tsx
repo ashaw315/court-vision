@@ -19,7 +19,7 @@ import {
 } from '@/lib/contracts';
 import type { SeasonScope } from '@/lib/data/scope';
 import { color, font, type } from '@/lib/design/tokens';
-import { grainUrl, unitForGrain } from '@/lib/nav/routes';
+import { grainUrl, scopeQuery, unitForGrain } from '@/lib/nav/routes';
 import { DENSITY, densityNoteText, scopeForPlate } from '@/lib/network/density';
 
 /**
@@ -70,10 +70,15 @@ async function fetchValidated<T>(
 export function CourtVision({
   initialData,
   scope,
+  season,
+  team,
 }: {
   /** The team scope, rendered by the server so the landing view needs no round-trip. */
   initialData: GrainResponse;
   scope: SeasonScope | null;
+  /** The team-season this view is scoped to, e.g. "2025-26" and "BKN". */
+  season: string;
+  team: string;
 }) {
   const [grain, setGrain] = useState<Grain>('team');
   const [lineupId, setLineupId] = useState<string | null>(null);
@@ -93,11 +98,11 @@ export function CourtVision({
       try {
         const [lineups, players] = await Promise.all([
           fetchValidated(
-            `/api/lineups?minMinutes=${DEFAULT_MIN_MINUTES}`,
+            `/api/lineups${scopeQuery({ season, team }, { minMinutes: String(DEFAULT_MIN_MINUTES) })}`,
             LineupsResponse,
             controller.signal,
           ),
-          fetchValidated('/api/players', PlayersResponse, controller.signal),
+          fetchValidated(`/api/players${scopeQuery({ season, team })}`, PlayersResponse, controller.signal),
         ]);
         setCatalog({
           lineups: lineups.lineups,
@@ -112,7 +117,7 @@ export function CourtVision({
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [season, team]);
 
   /**
    * The catalog is fetched at the default threshold, so lowering the threshold has to
@@ -124,7 +129,7 @@ export function CourtVision({
     (async () => {
       try {
         const payload = await fetchValidated(
-          `/api/lineups?minMinutes=${minMinutes}`,
+          `/api/lineups${scopeQuery({ season, team }, { minMinutes: String(minMinutes) })}`,
           LineupsResponse,
           controller.signal,
         );
@@ -136,7 +141,7 @@ export function CourtVision({
       }
     })();
     return () => controller.abort();
-  }, [minMinutes]);
+  }, [minMinutes, season, team]);
 
   /**
    * Load the plate for the current scope.
@@ -148,7 +153,7 @@ export function CourtVision({
   const requestToken = useRef(0);
 
   const load = useCallback((target: Grain, unitId: string | number | null) => {
-    const url = grainUrl(target, unitId);
+    const url = grainUrl(target, unitId, { season, team });
     if (url === null) return;
 
     const token = requestToken.current + 1;
@@ -177,7 +182,7 @@ export function CourtVision({
     })();
 
     return () => controller.abort();
-  }, []);
+  }, [season, team]);
 
   /** Switching grain moves to that scope's current selection, defaulting to the first. */
   function chooseGrain(next: Grain) {
