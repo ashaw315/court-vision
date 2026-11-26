@@ -87,3 +87,20 @@ export function parseMinMinutes(raw: string | null, fallback: number): Parsed<nu
 
   return { ok: true, value };
 }
+
+/** A season label like "2025-26": four-digit start year, then the two-digit end year. */
+const SEASON = /^(\d{4})-(\d{2})$/;
+
+export function parseSeason(raw: string | null, fallback: string): Parsed<string> {
+  if (raw === null || raw.trim() === '') return { ok: true, value: fallback };
+  const match = SEASON.exec(raw);
+  // The end year must follow the start year ("2025-26"), so "2025-99" is rejected rather
+  // than passed through to a query that can only return nothing.
+  if (!match || (Number(match[1]) + 1) % 100 !== Number(match[2])) {
+    return {
+      ok: false,
+      error: `season must look like "2025-26", got ${JSON.stringify(raw)}`,
+    };
+  }
+  return { ok: true, value: raw };
+}

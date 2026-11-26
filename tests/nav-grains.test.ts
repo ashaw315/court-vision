@@ -15,6 +15,8 @@ import {
 import { DENSITY, densityNoteText, scopeForPlate } from '@/lib/network/density';
 import { buildConnections, buildRoleNodes } from '@/lib/network/model';
 
+import { NETS } from './helpers/scope';
+
 /**
  * Navigation against the SEEDED database: does each scope actually return itself, and does
  * every scope survive the one shared plate?
@@ -41,7 +43,7 @@ beforeAll(async () => {
     return;
   }
   try {
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
     if (team.shots.length === 0) {
       preflightError = 'Database is reachable but empty. Run `npm run db:seed`.';
     }
@@ -60,14 +62,14 @@ describe('each grain returns its own scope', () => {
   it('labels the team scope as team, with no unit id', () => {
     // The scope block is what the plate prints in its header. If it lied, the plate would
     // caption the wrong subject while looking entirely correct.
-    return getTeamGrain().then((team) => {
+    return getTeamGrain(NETS).then((team) => {
       expect(team.scope.grain).toBe('team');
       expect(team.scope.id).toBeNull();
     });
   });
 
   it('labels the lineup scope as lineup, carrying the group id back', async () => {
-    const lineup = await getLineup(TOP_LINEUP);
+    const lineup = await getLineup(TOP_LINEUP, NETS);
     expect(lineup).not.toBeNull();
     const payload = await getLineupGrain(lineup!);
     expect(payload.scope.grain).toBe('lineup');
@@ -75,7 +77,7 @@ describe('each grain returns its own scope', () => {
   });
 
   it('labels the player scope as player, carrying the person id back', async () => {
-    const payload = await getPlayerGrain(PORTER, PORTER_NAME);
+    const payload = await getPlayerGrain(PORTER, PORTER_NAME, NETS);
     expect(payload.scope.grain).toBe('player');
     expect(payload.scope.id).toBe(PORTER);
   });
@@ -83,10 +85,10 @@ describe('each grain returns its own scope', () => {
   it('narrows: player ⊂ lineup ⊂ team', async () => {
     // A grain switch has to actually change the data. Equal shot counts would mean the
     // container was re-rendering the same scope under three different labels.
-    const [team, lineupRow] = await Promise.all([getTeamGrain(), getLineup(TOP_LINEUP)]);
+    const [team, lineupRow] = await Promise.all([getTeamGrain(NETS), getLineup(TOP_LINEUP, NETS)]);
     const [lineup, player] = await Promise.all([
       getLineupGrain(lineupRow!),
-      getPlayerGrain(PORTER, PORTER_NAME),
+      getPlayerGrain(PORTER, PORTER_NAME, NETS),
     ]);
     expect(player.shots.length).toBeLessThan(team.shots.length);
     expect(lineup.shots.length).toBeLessThan(team.shots.length);
@@ -96,11 +98,11 @@ describe('each grain returns its own scope', () => {
 
 describe('every grain satisfies the shared contract', () => {
   it('validates all three payloads against GrainResponse', async () => {
-    const lineupRow = await getLineup(TOP_LINEUP);
+    const lineupRow = await getLineup(TOP_LINEUP, NETS);
     const payloads = await Promise.all([
-      getTeamGrain(),
+      getTeamGrain(NETS),
       getLineupGrain(lineupRow!),
-      getPlayerGrain(PORTER, PORTER_NAME),
+      getPlayerGrain(PORTER, PORTER_NAME, NETS),
     ]);
     // One schema for three scopes is the claim that makes "one instrument" true.
     for (const payload of payloads) {
@@ -111,11 +113,11 @@ describe('every grain satisfies the shared contract', () => {
 
 describe('every grain survives the one plate', () => {
   it('draws a positioned, bounded plate at all three scopes', async () => {
-    const lineupRow = await getLineup(TOP_LINEUP);
+    const lineupRow = await getLineup(TOP_LINEUP, NETS);
     const scopes = await Promise.all([
-      getTeamGrain(),
+      getTeamGrain(NETS),
       getLineupGrain(lineupRow!),
-      getPlayerGrain(PORTER, PORTER_NAME),
+      getPlayerGrain(PORTER, PORTER_NAME, NETS),
     ]);
 
     for (const raw of scopes) {
@@ -141,7 +143,7 @@ describe('every grain survives the one plate', () => {
   });
 
   it('thins the real team scope and says so', async () => {
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
     const { data, note } = scopeForPlate(team, DENSITY.team);
 
     expect(team.players.length).toBeGreaterThan(DENSITY.team.maxNodes!);
@@ -156,7 +158,7 @@ describe('every grain survives the one plate', () => {
 
   it('leaves the real lineup scope untouched', async () => {
     // Five players by definition — capping it would restyle the resolved design.
-    const lineupRow = await getLineup(TOP_LINEUP);
+    const lineupRow = await getLineup(TOP_LINEUP, NETS);
     const lineup = await getLineupGrain(lineupRow!);
     expect(scopeForPlate(lineup, DENSITY.lineup).note.thinned).toBe(false);
   });
@@ -165,7 +167,7 @@ describe('every grain survives the one plate', () => {
     // A player's scope is every teammate they have ever created with or for — 13-21 people
     // across a season, most with no made baskets in that scope. Uncapped it renders as one
     // band of overprinting labels.
-    const player = await getPlayerGrain(PORTER, PORTER_NAME);
+    const player = await getPlayerGrain(PORTER, PORTER_NAME, NETS);
     expect(player.players.length).toBeGreaterThan(DENSITY.player.maxNodes!);
 
     const { data, note } = scopeForPlate(player, DENSITY.player);
@@ -176,7 +178,7 @@ describe('every grain survives the one plate', () => {
 
 describe('the pickers can populate', () => {
   it('offers lineups at the display threshold, each with its minutes', async () => {
-    const lineups = await getLineups(50);
+    const lineups = await getLineups(NETS, 50);
     expect(lineups.length).toBeGreaterThan(0);
     // Minutes ride on every row so a thin unit is never mistaken for a substantial one.
     for (const lineup of lineups) {
@@ -187,27 +189,27 @@ describe('the pickers can populate', () => {
 
   it('surfaces more units at the emit floor than at the display threshold', async () => {
     // This is the emit-floor decision paying off — the UI owns the display cutoff.
-    const [atFloor, atDefault] = await Promise.all([getLineups(25), getLineups(50)]);
+    const [atFloor, atDefault] = await Promise.all([getLineups(NETS, 25), getLineups(NETS, 50)]);
     expect(atFloor.length).toBeGreaterThan(atDefault.length);
   });
 
   it('offers every picked lineup as a loadable scope', async () => {
     // A picker row that cannot be fetched is a dead option in the UI.
-    const lineups = await getLineups(50);
-    const row = await getLineup(lineups[0]!.groupId);
+    const lineups = await getLineups(NETS, 50);
+    const row = await getLineup(lineups[0]!.groupId, NETS);
     expect(row).not.toBeNull();
   });
 
   it('offers players ordered by shot count, all loadable', async () => {
-    const players = await getPlayers();
+    const players = await getPlayers(NETS);
     expect(players.length).toBeGreaterThan(0);
     const counts = players.map((player) => player.shotCount);
     expect([...counts].sort((a, b) => b - a)).toEqual(counts);
 
     const first = players[0]!;
-    const name = await playerExists(first.personId);
+    const name = await playerExists(first.personId, NETS);
     expect(name).not.toBeNull();
-    const payload = await getPlayerGrain(first.personId, name!);
+    const payload = await getPlayerGrain(first.personId, name!, NETS);
     expect(payload.scope.grain).toBe('player');
   });
 });
@@ -249,7 +251,7 @@ describe('the plate captions the scope it is actually showing', () => {
   it('reports the density note against the whole team, not the subgraph', async () => {
     // The conservative denominator is the honest one: these 18 arcs carry ~31% of the
     // Nets' season, even though they are ~64% of the 8-player subgraph drawn.
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
     const { data, note } = scopeForPlate(team, DENSITY.team);
     const drawn = data.edges.reduce((sum, edge) => sum + edge.count, 0);
     const whole = team.edges.reduce((sum, edge) => sum + edge.count, 0);
@@ -273,13 +275,13 @@ describe('no plate overprints its own labels', () => {
     const MIN_GAP_Y = 34;
     const X_OVERLAP = 96;
 
-    const players = await getPlayers();
-    const lineupRow = await getLineup(TOP_LINEUP);
+    const players = await getPlayers(NETS);
+    const lineupRow = await getLineup(TOP_LINEUP, NETS);
     const scopes = [
-      await getTeamGrain(),
+      await getTeamGrain(NETS),
       await getLineupGrain(lineupRow!),
       ...(await Promise.all(
-        players.map((player) => getPlayerGrain(player.personId, player.displayName)),
+        players.map((player) => getPlayerGrain(player.personId, player.displayName, NETS)),
       )),
     ];
 

@@ -11,6 +11,8 @@ import {
   openPanel,
 } from '@/lib/panel/state';
 
+import { NETS } from './helpers/scope';
+
 /**
  * The reading guide: choreography, and the honesty of what it asserts.
  *
@@ -92,7 +94,7 @@ describe('methodology numbers come from real data', () => {
       return;
     }
     try {
-      scope = await getSeasonScope();
+      scope = await getSeasonScope(NETS);
     } catch (error) {
       preflightError = `Could not reach the database: ${(error as Error).message}`;
     }
@@ -143,7 +145,7 @@ describe('the prose does not assert anything the app contradicts', () => {
   it('does not imply unresolved assisters exist in this dataset', async () => {
     // Policy is real ("recorded as unknown rather than guessed"); the COUNT is zero, so the
     // panel must not suggest missing edges the reader could go looking for.
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
     expect(team.split.unresolvedAssisted).toBe(0);
     const text = await source();
     expect(text).toContain('rather than guessed');
@@ -167,7 +169,7 @@ describe('the prose does not assert anything the app contradicts', () => {
     // Verified in Phase 3: shots, assists and minutes matched the official box scores.
     const text = await source();
     expect(text).toContain('reconcile to the official box scores');
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
     expect(team.split.madeBaskets).toBe(team.split.assisted + team.split.selfCreated);
   });
 });
@@ -185,12 +187,12 @@ describe('§III capping copy is true in every grain', () => {
       await import('@/lib/api/queries');
     const { DENSITY, scopeForPlate } = await import('@/lib/network/density');
 
-    const row = await getLineup('-1629008-1629611-1629651-1641730-1642856-');
+    const row = await getLineup('-1629008-1629611-1629651-1641730-1642856-', NETS);
     const cases: Array<[string, boolean]> = [];
     for (const raw of [
-      await getTeamGrain(),
+      await getTeamGrain(NETS),
       await getLineupGrain(row!),
-      await getPlayerGrain(1629008, 'Porter Jr.'),
+      await getPlayerGrain(1629008, 'Porter Jr.', NETS),
     ]) {
       const { note } = scopeForPlate(raw, DENSITY[raw.scope.grain]);
       cases.push([raw.scope.grain, describesCap(note)]);

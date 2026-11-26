@@ -4,6 +4,8 @@ import { getTeamGrain } from '@/lib/api/queries';
 import { DENSITY, scopeForPlate } from '@/lib/network/density';
 import { buildOrigination, buildRoleNodes } from '@/lib/network/model';
 
+import { NETS } from './helpers/scope';
+
 /**
  * §D origination denominator.
  *
@@ -19,7 +21,7 @@ import { buildOrigination, buildRoleNodes } from '@/lib/network/model';
 
 describe('team origination bars use the whole-scope denominator', () => {
   it('does not renormalise the shown players to 100%', async () => {
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
     const { data, note } = scopeForPlate(team, DENSITY.team);
     const rows = buildOrigination(buildRoleNodes(data), team);
 
@@ -41,7 +43,7 @@ describe('team origination bars use the whole-scope denominator', () => {
   });
 
   it('reports each bar against the full scope, not the subgraph', async () => {
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
     const { data } = scopeForPlate(team, DENSITY.team);
     const rows = buildOrigination(buildRoleNodes(data), team);
 
@@ -55,7 +57,7 @@ describe('team origination bars use the whole-scope denominator', () => {
   });
 
   it('keeps the label consistent with the share it renders', async () => {
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
     const { data } = scopeForPlate(team, DENSITY.team);
     for (const row of buildOrigination(buildRoleNodes(data), team)) {
       expect(row.label).toBe(`${Math.round(row.share * 10) / 10}%`);
@@ -65,7 +67,7 @@ describe('team origination bars use the whole-scope denominator', () => {
   it('is unchanged for an uncapped scope', async () => {
     // A lineup is never thinned, so full-scope and drawn-scope denominators coincide and
     // the bars must still sum to 100%.
-    const team = await getTeamGrain();
+    const team = await getTeamGrain(NETS);
     const { data } = scopeForPlate(team, DENSITY.team);
     const rowsAgainstSelf = buildOrigination(buildRoleNodes(data), data);
     const sum = rowsAgainstSelf.reduce((total, row) => total + row.share, 0);

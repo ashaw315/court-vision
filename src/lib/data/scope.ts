@@ -29,18 +29,19 @@ export const SeasonScope = z.object({
   scheduledGames: z.number().int().nonnegative(),
   /** Games excluded by validation (82 − 72 = 10). */
   excludedGames: z.number().int().nonnegative(),
+  /** When this team-season was last loaded (ISO), or null if unknown. */
+  lastLoadedAt: z.string().nullable().default(null),
 });
 export type SeasonScope = z.infer<typeof SeasonScope>;
 
 /**
  * The season this dataset covers.
  *
- * Mirrors `etl/nba_client.py`'s `SEASON`. The label lives in config because the database
- * stores no season column — the dataset is single-season by design (CLAUDE.md: Nets-only,
- * 2025-26), so a column would be a constant in every row. The GAME COUNT, which is the
- * part that can drift, is read from the data rather than written here.
+ * The DEFAULT season, used when a request names none. Every table now carries its own
+ * season column, so this is only the landing choice — never an assumption about the data.
  */
 export const SEASON_LABEL = '2025-26';
+export const DEFAULT_SEASON = SEASON_LABEL;
 export const SEASON_TYPE = 'Regular Season';
 
 /**
@@ -68,13 +69,15 @@ export function seasonScope(
   games: number,
   scheduledGames = games,
   excludedGames = Math.max(0, scheduledGames - games),
+  options: { season?: string; seasonType?: string; lastLoadedAt?: string | null } = {},
 ): SeasonScope {
   return {
-    season: SEASON_LABEL,
-    seasonType: SEASON_TYPE,
+    season: options.season ?? SEASON_LABEL,
+    seasonType: options.seasonType ?? SEASON_TYPE,
     games,
     scheduledGames,
     excludedGames,
+    lastLoadedAt: options.lastLoadedAt ?? null,
   };
 }
 

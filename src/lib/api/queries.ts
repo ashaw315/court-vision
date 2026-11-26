@@ -1,15 +1,22 @@
 import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
-import { assistEdges, games, lineups, players, shotEvents } from '@/db/schema';
+import {
+  assistEdges,
+  lineups,
+  playerTeamSeasons,
+  players,
+  shotEvents,
+  teamSeasons,
+} from '@/db/schema';
 import type {
   AssistedSplit,
   GrainResponse,
   LineupSummary,
   ShotEvent,
 } from '@/lib/contracts';
-import { datasetManifest } from '@/lib/data/manifest';
 import { seasonScope, type SeasonScope } from '@/lib/data/scope';
+import { teamById, teamLabel } from '@/lib/teams';
 
 /**
  * Query + shaping for the three grains.
@@ -24,6 +31,20 @@ import { seasonScope, type SeasonScope } from '@/lib/data/scope';
  */
 
 type ShotRow = typeof shotEvents.$inferSelect;
+
+/**
+ * Every query is scoped to ONE team in ONE season. A player id, lineup id or interval id is
+ * only meaningful inside that scope — the same player appears in several team-seasons, and
+ * the same five can recur across seasons — so nothing here reads across scopes.
+ */
+export interface TeamScope {
+  season: string;
+  teamId: number;
+}
+
+function shotScope({ season, teamId }: TeamScope) {
+  return and(eq(shotEvents.season, season), eq(shotEvents.teamId, teamId));
+}
 
 /** Map a database row to the contract's ShotEvent. Nulls pass through untouched. */
 function toShotEvent(row: ShotRow): ShotEvent {
@@ -79,6 +100,13 @@ function countGames(shots: ShotEvent[]): number {
   return new Set(shots.map((s) => s.gameId)).size;
 }
 
+type EdgeRow = typeof assistEdges.$inferSelect;
+
+/** Drop the scoping columns: the contract's edge is just the pair and its counts. */
+function toEdge({ assisterId, shooterId, count, points, made2, made3 }: EdgeRow) {
+  return { assisterId, shooterId, count, points, made2, made3 };
+}
+
 /** Every player referenced by these shots or edges, fetched in ONE query (no N+1). */
 async function fetchPlayers(personIds: Set<number>) {
   if (personIds.size === 0) return [];
@@ -107,12 +135,22 @@ function referencedPlayers(
 }
 
 /** Does this player exist? Used to 404 rather than return an empty bundle. */
-export async function playerExists(personId: number): Promise<string | null> {
+export async function playerExists(
+  personId: number,
+  scope: TeamScope,
+): Promise<string | null> {
   const db = getDb();
   const rows = await db
     .select({ displayName: players.displayName })
     .from(players)
-    .where(eq(players.personId, personId))
+    .innerJoin(playerTeamSeasons, eq(playerTeamSeasons.personId, players.personId))
+    .where(
+      and(
+        eq(players.personId, personId),
+        eq(playerTeamSeasons.season, scope.season),
+        eq(playerTeamSeasons.teamId, scope.teamId),
+      ),
+    )
     .limit(1);
   return rows.length ? rows[0].displayName : null;
 }
@@ -127,26 +165,34 @@ export async function playerExists(personId: number): Promise<string | null> {
 export async function getPlayerGrain(
   personId: number,
   displayName: string,
+  scope: TeamScope,
 ): Promise<GrainResponse> {
   const db = getDb();
 
   const [shotRows, edgeRows] = await Promise.all([
     // Uses shot_events_shooter_idx.
-    db.select().from(shotEvents).where(eq(shotEvents.shooterId, personId)),
+    db
+      .select()
+      .from(shotEvents)
+      .where(and(shotScope(scope), eq(shotEvents.shooterId, personId))),
     // Uses assist_edges_assister_idx / _shooter_idx.
     db
       .select()
       .from(assistEdges)
       .where(
-        or(
-          eq(assistEdges.assisterId, personId),
-          eq(assistEdges.shooterId, personId),
+        and(
+          eq(assistEdges.season, scope.season),
+          eq(assistEdges.teamId, scope.teamId),
+          or(
+            eq(assistEdges.assisterId, personId),
+            eq(assistEdges.shooterId, personId),
+          ),
         ),
       ),
   ]);
 
   const shots = shotRows.map(toShotEvent);
-  const edges = edgeRows.map((e) => ({ ...e }));
+  const edges = edgeRows.map(toEdge);
   const playerRefs = await fetchPlayers(referencedPlayers(shots, edges));
 
   return {
@@ -165,12 +211,21 @@ export async function getPlayerGrain(
 }
 
 /** The lineup row, or null if the groupId is unknown. */
-export async function getLineup(groupId: string): Promise<typeof lineups.$inferSelect | null> {
+export async function getLineup(
+  groupId: string,
+  scope: TeamScope,
+): Promise<typeof lineups.$inferSelect | null> {
   const db = getDb();
   const rows = await db
     .select()
     .from(lineups)
-    .where(eq(lineups.groupId, groupId))
+    .where(
+      and(
+        eq(lineups.groupId, groupId),
+        eq(lineups.season, scope.season),
+        eq(lineups.teamId, scope.teamId),
+      ),
+    )
     .limit(1);
   return rows.length ? rows[0] : null;
 }
@@ -213,10 +268,13 @@ export async function getLineupGrain(
     .from(shotEvents)
     .where(
       and(
+        eq(shotEvents.season, lineup.season),
+        eq(shotEvents.teamId, lineup.teamId),
         isNotNull(shotEvents.intervalId),
         sql`${shotEvents.intervalId} IN (
           SELECT interval_id FROM lineup_intervals
-          WHERE on_court = ${fiveArray}
+          WHERE season = ${lineup.season} AND team_id = ${lineup.teamId}
+            AND on_court = ${fiveArray}
         )`,
       ),
     );
@@ -277,23 +335,38 @@ export function deriveEdges(shots: ShotEvent[]): GrainResponse['edges'] {
     .sort((a, b) => b.count - a.count || a.assisterId - b.assisterId);
 }
 
-/** The team grain: the whole loaded season. */
-export async function getTeamGrain(): Promise<GrainResponse> {
+/** The team grain: one team's whole loaded season. */
+export async function getTeamGrain(scope: TeamScope): Promise<GrainResponse> {
   const db = getDb();
+  const team = teamById(scope.teamId);
 
   const [shotRows, edgeRows, playerRows] = await Promise.all([
-    db.select().from(shotEvents),
-    db.select().from(assistEdges),
+    db.select().from(shotEvents).where(shotScope(scope)),
+    db
+      .select()
+      .from(assistEdges)
+      .where(and(eq(assistEdges.season, scope.season), eq(assistEdges.teamId, scope.teamId))),
     db
       .select({ personId: players.personId, displayName: players.displayName })
-      .from(players),
+      .from(players)
+      .innerJoin(playerTeamSeasons, eq(playerTeamSeasons.personId, players.personId))
+      .where(
+        and(
+          eq(playerTeamSeasons.season, scope.season),
+          eq(playerTeamSeasons.teamId, scope.teamId),
+        ),
+      ),
   ]);
 
   const shots = shotRows.map(toShotEvent);
-  const edges = edgeRows.map((e) => ({ ...e })).sort((a, b) => b.count - a.count);
+  const edges = edgeRows.map(toEdge).sort((a, b) => b.count - a.count);
 
   return {
-    scope: { grain: 'team', id: null, label: 'Brooklyn Nets' },
+    scope: {
+      grain: 'team',
+      id: null,
+      label: team ? teamLabel(team) : `Team ${scope.teamId}`,
+    },
     edges,
     shots,
     split: computeSplit(shots),
@@ -314,7 +387,10 @@ export async function getTeamGrain(): Promise<GrainResponse> {
  * endpoint reports whatever exists above the requested cutoff, so the UI can move the line
  * without a re-run.
  */
-export async function getLineups(minMinutes: number): Promise<LineupSummary[]> {
+export async function getLineups(
+  scope: TeamScope,
+  minMinutes: number,
+): Promise<LineupSummary[]> {
   const db = getDb();
 
   const rows = await db
@@ -325,13 +401,22 @@ export async function getLineups(minMinutes: number): Promise<LineupSummary[]> {
       displayNames: lineups.displayNames,
       shotCount: sql<number>`(
         SELECT count(*)::int FROM shot_events s
-        WHERE s.interval_id IN (
-          SELECT interval_id FROM lineup_intervals i WHERE i.on_court = ${lineups.personIds}
-        )
+        WHERE s.season = ${lineups.season} AND s.team_id = ${lineups.teamId}
+          AND s.interval_id IN (
+            SELECT interval_id FROM lineup_intervals i
+            WHERE i.season = ${lineups.season} AND i.team_id = ${lineups.teamId}
+              AND i.on_court = ${lineups.personIds}
+          )
       )`,
     })
     .from(lineups)
-    .where(sql`${lineups.minutes} >= ${minMinutes}`)
+    .where(
+      and(
+        eq(lineups.season, scope.season),
+        eq(lineups.teamId, scope.teamId),
+        sql`${lineups.minutes} >= ${minMinutes}`,
+      ),
+    )
     .orderBy(sql`${lineups.minutes} DESC`);
 
   return rows.map((row) => ({
@@ -343,18 +428,27 @@ export async function getLineups(minMinutes: number): Promise<LineupSummary[]> {
   }));
 }
 
-/** The player picker: every player, with a shot count for ordering/sizing. */
-export async function getPlayers() {
+/** The player picker: one team-season's players, with a shot count for ordering/sizing. */
+export async function getPlayers(scope: TeamScope) {
   const db = getDb();
   const rows = await db
     .select({
       personId: players.personId,
       displayName: players.displayName,
       shotCount: sql<number>`(
-        SELECT count(*)::int FROM shot_events s WHERE s.shooter_id = ${players.personId}
+        SELECT count(*)::int FROM shot_events s
+        WHERE s.shooter_id = ${players.personId}
+          AND s.season = ${scope.season} AND s.team_id = ${scope.teamId}
       )`,
     })
     .from(players)
+    .innerJoin(playerTeamSeasons, eq(playerTeamSeasons.personId, players.personId))
+    .where(
+      and(
+        eq(playerTeamSeasons.season, scope.season),
+        eq(playerTeamSeasons.teamId, scope.teamId),
+      ),
+    )
     .orderBy(sql`3 DESC`);
 
   return rows.map((row) => ({
@@ -365,26 +459,43 @@ export async function getPlayers() {
 }
 
 /**
- * The dataset's season scope — the validated game count every total is summed over.
+ * A team-season's scope: the validated game count every total is summed over, read from
+ * the `team_seasons` row the loader wrote.
  *
- * Read from `games` rather than from a grain's `meta.games`: the latter counts the games
- * the CURRENT SCOPE appears in (18 for the top lineup), while the plates' totals cover
- * the whole validated season (72). Stating the former as the season scope would claim the
- * numbers cover fewer games than they do.
+ * Returns null when that team-season has not been loaded — the caller turns that into a
+ * 404 or an empty state rather than rendering a plate with no data behind it.
+ *
+ * `scope.games` (validated games) is NOT a grain's `meta.games` (games the current scope
+ * appears in): the totals cover the former, and stating the latter would claim they cover
+ * fewer games than they do.
  */
-export async function getSeasonScope(): Promise<SeasonScope> {
+export async function getSeasonScope(scope: TeamScope): Promise<SeasonScope | null> {
   const db = getDb();
-  const rows = await db.select({ n: sql<number>`count(*)::int` }).from(games);
-  const validated = Number(rows[0]?.n ?? 0);
+  const rows = await db
+    .select()
+    .from(teamSeasons)
+    .where(and(eq(teamSeasons.season, scope.season), eq(teamSeasons.teamId, scope.teamId)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return seasonScope(row.gamesValidated, row.gamesScheduled, row.gamesExcluded, {
+    season: row.season,
+    seasonType: row.seasonType,
+    lastLoadedAt: row.lastLoadedAt ? row.lastLoadedAt.toISOString() : null,
+  });
+}
 
-  // The schedule size and exclusion count come from the ETL's own run manifest, which
-  // ships with the tracked dataset. They are not in the database (they describe the RUN,
-  // not the data), and hardcoding "82 / 10" here would silently go stale the moment the
-  // season is regenerated.
-  const manifest = datasetManifest();
-  return seasonScope(
-    validated,
-    manifest?.gamesInSchedule ?? validated,
-    manifest ? manifest.gamesInSchedule - validated : 0,
-  );
+/** Every loaded team-season, for the pickers. */
+export async function getTeamSeasons() {
+  const db = getDb();
+  const rows = await db
+    .select({
+      season: teamSeasons.season,
+      teamId: teamSeasons.teamId,
+      gamesValidated: teamSeasons.gamesValidated,
+      gamesScheduled: teamSeasons.gamesScheduled,
+    })
+    .from(teamSeasons)
+    .orderBy(sql`${teamSeasons.season} DESC, ${teamSeasons.teamId}`);
+  return rows;
 }

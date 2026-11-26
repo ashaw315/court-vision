@@ -1,6 +1,7 @@
 import { LineupsResponse } from '@/lib/contracts';
 import { parseMinMinutes } from '@/lib/api/params';
 import { getLineups } from '@/lib/api/queries';
+import { resolveTeamScope } from '@/lib/api/scope-request';
 import { badRequest, serverError, validated } from '@/lib/api/respond';
 
 /**
@@ -18,7 +19,7 @@ const EMIT_FLOOR_MINUTES = 25;
 const DEFAULT_MIN_MINUTES = 50;
 
 /**
- * GET /api/lineups?minMinutes=NN
+ * GET /api/lineups?season=2025-26&team=BKN&minMinutes=NN
  *
  * The lineup picker: which units exist above a threshold, and how much each is worth.
  * Every row carries its minutes so the UI can show sample size honestly. Read-only.
@@ -39,7 +40,9 @@ export async function GET(request: Request) {
   const minMinutes = parsed.value;
 
   try {
-    const lineups = await getLineups(minMinutes);
+    const resolved = await resolveTeamScope(url);
+    if (!resolved.ok) return resolved.response;
+    const lineups = await getLineups(resolved.scope, minMinutes);
     return validated(LineupsResponse, {
       lineups,
       minMinutes,

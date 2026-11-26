@@ -227,13 +227,30 @@ async function main(): Promise<void> {
       })),
     ));
 
+  // Schedule size and the excluded games come from the ETL run manifest shipped with the
+  // dataset, so the loaded team-season states 72 of 82 — not 72 of 72.
+  const manifest = z
+    .object({
+      gamesInSchedule: z.number().int(),
+      failedValidation: z.array(z.object({ gameId: z.string(), reasons: z.array(z.string()) })),
+    })
+    .parse(raw.manifest);
+  const failures = manifest.failedValidation.map((f) => ({
+    gameId: f.gameId,
+    passed: false,
+    // The check name only; the full diagnostic stays in the manifest.
+    reasons: f.reasons.map((r) => r.replace(/^check failed: /, '').replace(/ \(.*$/s, '')).slice(0, 1),
+  }));
+
   await insertBatched('team_seasons', [{ season: SEASON, teamId: TEAM_ID }], (batch) =>
     db.insert(teamSeasons).values(
       batch.map((row) => ({
         ...row,
-        gamesScheduled: gameRows.length,
+        gamesScheduled: manifest.gamesInSchedule,
         gamesValidated: gameRows.length,
-        gamesExcluded: 0,
+        gamesExcluded: failures.length,
+        lastLoadedAt: new Date(),
+        failures,
       })),
     ));
 

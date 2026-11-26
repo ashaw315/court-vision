@@ -1,17 +1,18 @@
 import { GrainResponse } from '@/lib/contracts';
 import { parseGroupId } from '@/lib/api/params';
 import { getLineup, getLineupGrain } from '@/lib/api/queries';
+import { resolveTeamScope } from '@/lib/api/scope-request';
 import { badRequest, notFound, serverError, validated } from '@/lib/api/respond';
 
 /**
- * GET /api/lineup/[groupId]
+ * GET /api/lineup/[groupId]?season=2025-26&team=BKN
  *
  * A five-man unit's assist network and shot map, FILTERED to the intervals that unit was
  * actually on court for — the lineup-filtered capability the project exists to provide.
  * Read-only.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ groupId: string }> },
 ) {
   const { groupId: raw } = await params;
@@ -23,7 +24,9 @@ export async function GET(
   const groupId = parsed.value;
 
   try {
-    const lineup = await getLineup(groupId);
+    const resolved = await resolveTeamScope(new URL(request.url));
+    if (!resolved.ok) return resolved.response;
+    const lineup = await getLineup(groupId, resolved.scope);
     if (lineup === null) {
       // A well-formed groupId can miss for THREE different reasons, and the message used
       // to name only the last of them. Claiming "below the emit floor" for a five that is

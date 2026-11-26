@@ -12,12 +12,29 @@ import type { Grain } from '@/lib/contracts';
  * fetch. Null is deliberate: a "" id would hit `/api/player/` and 404 for a reason that
  * looks like a server fault rather than an incomplete selection.
  */
-export function grainUrl(grain: Grain, unitId: string | number | null): string | null {
-  if (grain === 'team') return '/api/team';
+export function grainUrl(
+  grain: Grain,
+  unitId: string | number | null,
+  teamScope?: TeamScopeQuery,
+): string | null {
+  const query = teamScope ? scopeQuery(teamScope) : '';
+  if (grain === 'team') return `/api/team${query}`;
   if (unitId === null || unitId === '') return null;
   return grain === 'lineup'
-    ? `/api/lineup/${encodeURIComponent(String(unitId))}`
-    : `/api/player/${encodeURIComponent(String(unitId))}`;
+    ? `/api/lineup/${encodeURIComponent(String(unitId))}${query}`
+    : `/api/player/${encodeURIComponent(String(unitId))}${query}`;
+}
+
+/** The team-season every request is scoped to: `{ season: '2025-26', team: 'BKN' }`. */
+export interface TeamScopeQuery {
+  season: string;
+  team: string;
+}
+
+/** `?season=2025-26&team=BKN` — leading `?` included. */
+export function scopeQuery({ season, team }: TeamScopeQuery, extra: Record<string, string> = {}): string {
+  const params = new URLSearchParams({ season, team, ...extra });
+  return `?${params.toString()}`;
 }
 
 /**
