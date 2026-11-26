@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { getDefense, getTimeline, getTrend, getValue } from '@/lib/api/analysis';
+import { getDefense, getMatchup, getTimeline, getTrend, getValue } from '@/lib/api/analysis';
+import { teamByAbbreviation } from '@/lib/teams';
 import { TimelineResponse, TrendResponse, ValueResponse } from '@/lib/contracts/analysis';
 
 import { NETS } from './helpers/scope';
@@ -45,6 +46,15 @@ describe('analysis queries', () => {
     expect(defense.gamesWithDefense).toBe(0);
     expect(defense.shots).toHaveLength(0);
     expect(defense.games).toBe(72);
+  });
+
+  it('matchup shows opponent shots only from games with defensive data', async () => {
+    const matchup = await getMatchup(NETS, teamByAbbreviation('BOS')!.teamId);
+    expect(matchup.games.length).toBeGreaterThan(0);
+    const defensiveShots = matchup.games.reduce((n, g) => n + (g.defense ? g.defense.shots : 0), 0);
+    expect(matchup.opponentShots).toHaveLength(defensiveShots);
+    const teamShots = matchup.games.reduce((n, g) => n + g.offense.shots, 0);
+    expect(matchup.teamShots).toHaveLength(teamShots);
   });
 
   it('shot-making sums to the team total', async () => {

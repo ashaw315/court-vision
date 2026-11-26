@@ -274,14 +274,20 @@ export async function getMatchup(scope: TeamScope, opponentId: number): Promise<
   const [data, bundle] = await Promise.all([loadTeamGames(scope), getShotValueModel(scope.season)]);
   const all = buildGameLines(data, scope, bundle.model).filter((l) => l.opponentId === opponentId);
   const ids = new Set(all.map((l) => l.gameId));
-  const inScope = data.shots.filter((s) => ids.has(s.gameId));
+  // Opponent shots count only where the opponent's side validated — the same rule as
+  // getDefense, so the map never shows shots the per-game table reports as unavailable.
+  const withDefense = new Set(all.filter((l) => l.defense !== null).map((l) => l.gameId));
   return {
     season: scope.season,
     teamId: scope.teamId,
     opponentId,
     games: all,
-    teamShots: inScope.filter((s) => s.teamId === scope.teamId).map(toMapShot),
-    opponentShots: inScope.filter((s) => s.teamId !== scope.teamId).map(toMapShot),
+    teamShots: data.shots
+      .filter((s) => ids.has(s.gameId) && s.teamId === scope.teamId)
+      .map(toMapShot),
+    opponentShots: data.shots
+      .filter((s) => withDefense.has(s.gameId) && s.teamId !== scope.teamId)
+      .map(toMapShot),
     model: bundle.info,
   };
 }
