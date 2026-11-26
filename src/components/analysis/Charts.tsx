@@ -52,28 +52,31 @@ export function ZeroLine({
   const n = Math.max(...series.map((s) => s.values.length));
   const x = (i: number) => (i / Math.max(1, n - 1)) * width;
   const y = (v: number) => height / 2 - (v / max) * (height / 2 - 6);
+  // The chart stretches to its box (no fixed aspect ratio) so it keeps a readable height on a
+  // phone instead of shrinking to a sliver; strokes are non-scaling so they stay crisp, and a
+  // lone point is a zero-length round-capped line so it stays a dot rather than an ellipse.
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
       role="img"
       aria-label={series.map((s) => s.label).join(' vs ')}
-      style={{ width: '100%', height: 'auto', display: 'block' }}
+      style={{ width: '100%', height: 'clamp(110px, 20vw, 200px)', display: 'block' }}
     >
-      <line x1={0} x2={width} y1={y(0)} y2={y(0)} stroke={color.rule} strokeWidth={1} />
+      <line x1={0} x2={width} y1={y(0)} y2={y(0)} stroke={color.rule} strokeWidth={1} vectorEffect="non-scaling-stroke" />
       {series.flatMap((s) =>
-        runs(s.values).map((run) =>
-          run.length === 1 ? (
-            <circle key={`${s.label}-${run[0][0]}`} cx={x(run[0][0])} cy={y(run[0][1])} r={1.6} fill={s.stroke} />
-          ) : (
-            <polyline
-              key={`${s.label}-${run[0][0]}`}
-              fill="none"
-              stroke={s.stroke}
-              strokeWidth={1.6}
-              points={run.map(([i, v]) => `${x(i)},${y(v)}`).join(' ')}
-            />
-          ),
-        ),
+        runs(s.values).map((run) => (
+          <polyline
+            key={`${s.label}-${run[0][0]}`}
+            fill="none"
+            stroke={s.stroke}
+            strokeWidth={run.length === 1 ? 4 : 1.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+            points={(run.length === 1 ? [run[0], run[0]] : run).map(([i, v]) => `${x(i)},${y(v)}`).join(' ')}
+          />
+        )),
       )}
     </svg>
   );
