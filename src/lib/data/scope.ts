@@ -97,6 +97,6 @@ export function methodologyFootnote(scope: SeasonScope): string | null {
   const games = scope.excludedGames === 1 ? 'game' : 'games';
   return (
     `* ${scope.games} of ${scope.scheduledGames} games. ${scope.excludedGames} ${games} `
-    + 'excluded for contradictory source substitution timestamps — see methodology.'
+    + 'excluded because they failed validation (inconsistent substitution timestamps or incomplete lineup attribution) — see methodology.'
   );
 }

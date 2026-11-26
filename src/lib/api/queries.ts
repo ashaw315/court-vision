@@ -499,3 +499,26 @@ export async function getTeamSeasons() {
     .orderBy(sql`${teamSeasons.season} DESC, ${teamSeasons.teamId}`);
   return rows;
 }
+
+export interface AuditRow {
+  gameId: string;
+  reasons: string[];
+}
+
+/** The games a team-season excluded, with the check each one failed. */
+export async function getAudit(scope: TeamScope): Promise<AuditRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select({ failures: teamSeasons.failures })
+    .from(teamSeasons)
+    .where(and(eq(teamSeasons.season, scope.season), eq(teamSeasons.teamId, scope.teamId)))
+    .limit(1);
+  const raw = rows[0]?.failures;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((f): AuditRow[] => {
+    const item = f as { gameId?: unknown; reasons?: unknown };
+    return typeof item.gameId === 'string' && Array.isArray(item.reasons)
+      ? [{ gameId: item.gameId, reasons: item.reasons.map(String) }]
+      : [];
+  });
+}
