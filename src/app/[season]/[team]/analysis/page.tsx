@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { ShotMap } from '@/components/analysis/Court';
 import { ZeroLine, rolling } from '@/components/analysis/Charts';
 import {
-  expectedPerShot, fmt, pct, pointsPerShot, signed,
+  auditChecks, expectedPerShot, fmt, pct, pointsPerShot, signed,
 } from '@/components/analysis/format';
 import { Section, Shell, Table } from '@/components/analysis/Shell';
 import { getDefense, getTimeline, getTrend, getValue } from '@/lib/api/analysis';
@@ -158,7 +158,7 @@ export default async function AnalysisPage({
         {audit.length === 0 ? (
           <p style={{ fontSize: 12 }}>No games excluded.</p>
         ) : (
-          <Table head={['Game', 'Failed check']} rows={audit.map((a) => [a.gameId, a.reasons.join('; ')])} />
+          <Table head={['Game', 'Failed check']} rows={audit.map((a) => [a.gameId, auditChecks(a.reasons)])} />
         )}
       </Section>
 
