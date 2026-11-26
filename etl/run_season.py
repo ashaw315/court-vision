@@ -41,6 +41,7 @@ from nba_client import (  # noqa: E402
     fetch_league_games,
     fetch_period_boxscores,
     fetch_play_by_play,
+    resolve_neutral_site,
 )
 from season import aggregate_season  # noqa: E402
 from transforms.lineup_intervals import build_lineup_intervals  # noqa: E402
@@ -226,6 +227,17 @@ def main() -> int:
     for index, game in enumerate(games, start=1):
         game_id = game["gameId"]
         sides = {tid: s for tid, s in game["sides"].items() if tid in wanted_ids}
+        label = f"[{index:>4}/{len(games)}] {game_id} {game['gameDate']}"
+        if game["neutralSite"]:
+            # The game log does not designate a home team here; the boxscore does.
+            try:
+                game = resolve_neutral_site(game, fetch_boxscore(game_id, cache_dir=CACHE))
+            except Exception as error:  # noqa: BLE001 - one bad game must not end the run
+                message = f"{type(error).__name__}: {error}"
+                for team_id in sides:
+                    errored.append((game_id, team_id, message))
+                print(f"{label}  ERROR  {message}")
+                continue
         game_records[game_id] = {
             "gameId": game_id,
             "season": season,
@@ -234,8 +246,8 @@ def main() -> int:
             "matchup": next(iter(game["sides"].values()))["matchup"],
             "homeTeamId": game["homeTeamId"],
             "awayTeamId": game["awayTeamId"],
+            "neutralSite": game["neutralSite"],
         }
-        label = f"[{index:>4}/{len(games)}] {game_id} {game['gameDate']}"
 
         # Checkpoint per team-game; fetch only if some requested side is missing.
         todo = []

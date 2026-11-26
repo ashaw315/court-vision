@@ -133,34 +133,56 @@ def fold_league_gamelog(payload: dict[str, Any]) -> list[dict[str, Any]]:
     games = []
     for game in by_game.values():
         sides = list(game["sides"].values())
-        if len(sides) != 2 or sorted(s["home"] for s in sides) != [False, True]:
+        homes = sorted(s["home"] for s in sides)
+        # Neutral-site games (international games, NBA Cup knockout rounds) list both
+        # sides as "X @ Y". The log does not name a designated home team there, so it is
+        # left unset for `resolve_neutral_site` to fill from the boxscore — never guessed.
+        neutral = len(sides) == 2 and homes == [False, False]
+        if len(sides) != 2 or (homes != [False, True] and not neutral):
             # A game missing a side, or with two homes, is a data problem to surface,
             # not to paper over.
             raise ValueError(
                 f"game {game['gameId']}: expected one home and one away side, got {sides}"
             )
-        home = next(s for s in sides if s["home"])
-        away = next(s for s in sides if not s["home"])
+        if neutral:
+            home, away = None, None
+            ordered = sides
+        else:
+            home = next(s for s in sides if s["home"])
+            away = next(s for s in sides if not s["home"])
+            ordered = [home, away]
         games.append(
             {
                 "gameId": game["gameId"],
                 "gameDate": game["gameDate"],
-                "homeTeamId": home["teamId"],
-                "awayTeamId": away["teamId"],
+                "homeTeamId": home["teamId"] if home else None,
+                "awayTeamId": away["teamId"] if away else None,
+                "neutralSite": neutral,
                 "sides": {
-                    home["teamId"]: {
-                        "matchup": home["matchup"],
-                        "abbreviation": home["abbreviation"],
-                    },
-                    away["teamId"]: {
-                        "matchup": away["matchup"],
-                        "abbreviation": away["abbreviation"],
-                    },
+                    s["teamId"]: {"matchup": s["matchup"], "abbreviation": s["abbreviation"]}
+                    for s in ordered
                 },
             }
         )
     games.sort(key=lambda g: (g["gameDate"], g["gameId"]))
     return games
+
+
+def resolve_neutral_site(game: dict[str, Any], boxscore: dict[str, Any]) -> dict[str, Any]:
+    """Fill a neutral-site game's home/away from the boxscore's designated teams.
+
+    The boxscore names `homeTeamId`/`awayTeamId` explicitly. They must be exactly the two
+    teams the game log listed; anything else is a source disagreement and raises.
+    Returns a new record; the input is not modified.
+    """
+    box = boxscore.get("boxScoreTraditional", boxscore)
+    home, away = box.get("homeTeamId"), box.get("awayTeamId")
+    if home is None or away is None or {home, away} != set(game["sides"]) or home == away:
+        raise ValueError(
+            f"game {game['gameId']}: boxscore home/away {home}/{away} does not match "
+            f"the game log's teams {sorted(game['sides'])}"
+        )
+    return {**game, "homeTeamId": home, "awayTeamId": away}
 
 
 def fetch_nets_game_ids(cache_dir: pathlib.Path | None = None) -> list[dict[str, str]]:
