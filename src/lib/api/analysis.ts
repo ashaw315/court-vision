@@ -1,4 +1,5 @@
 import { and, eq, or, sql } from 'drizzle-orm';
+import { cache } from 'react';
 
 import { getDb } from '@/db/client';
 import { gameTeamValidation, games, players, shotEvents, teamSeasons } from '@/db/schema';
@@ -97,7 +98,23 @@ interface TeamGames {
 }
 
 /** Every validated game of a team-season, plus all shots in those games (both sides). */
-async function loadTeamGames(scope: TeamScope): Promise<TeamGames> {
+/**
+ * The analysis page asks for timeline, defence, value and trend, and each needs this
+ * team-season's games. React's `cache()` shares one load across a single server render.
+ * It memoises on argument identity, so it is keyed on the primitive season and team id,
+ * not on a scope object each caller builds fresh. Outside a render (API route handlers,
+ * tests) it is a plain call, so every caller still gets the same data either way. Callers
+ * must treat the result as read-only, since one render shares it.
+ */
+const loadTeamGamesFor = cache(
+  (season: string, teamId: number): Promise<TeamGames> => loadTeamGamesUncached({ season, teamId }),
+);
+
+function loadTeamGames(scope: TeamScope): Promise<TeamGames> {
+  return loadTeamGamesFor(scope.season, scope.teamId);
+}
+
+async function loadTeamGamesUncached(scope: TeamScope): Promise<TeamGames> {
   const db = getDb();
   const gameRows = await db
     .select({
