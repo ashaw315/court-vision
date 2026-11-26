@@ -151,6 +151,20 @@ def _process_team(game_id, team_id, team, actions, boxscore, period_boxscores, p
     }
 
 
+def format_team_game(label: str, abbr: str, payload: dict, cached: bool = False) -> list[str]:
+    """Progress lines for one team-game: ok/FAIL with counts, then each failing check.
+
+    Used for fresh and cached games alike, so a re-run still shows every excluded game
+    and why.
+    """
+    reasons = game_failures(payload)
+    counts = payload["verification"]["counts"]
+    tag = "ok  " if not reasons else "FAIL"
+    head = (f"{label}  {abbr} {tag} shots={counts['shots']:>3} "
+            f"intervals={counts['intervals']:>3}" + ("  (cached)" if cached else ""))
+    return [head] + [f"       !! {reason}" for reason in reasons]
+
+
 def game_failures(payload: dict) -> list[str]:
     """The specific reasons this game failed validation. Empty means it passed."""
     reasons = [
@@ -255,11 +269,13 @@ def main() -> int:
             path = games_dir / f"{game_id}_{team_id}.json"
             if path.exists() and not args.force:
                 with open(path) as f:
-                    payloads[team_id].append(json.load(f))
+                    cached = json.load(f)
+                payloads[team_id].append(cached)
+                for line in format_team_game(label, abbreviations[team_id], cached, cached=True):
+                    print(line)
             else:
                 todo.append(team_id)
         if not todo:
-            print(f"{label}  cached")
             continue
 
         try:
@@ -281,13 +297,8 @@ def main() -> int:
             with open(games_dir / f"{game_id}_{team_id}.json", "w") as f:
                 json.dump(payload, f)
             payloads[team_id].append(payload)
-            reasons = game_failures(payload)
-            counts = payload["verification"]["counts"]
-            tag = "ok  " if not reasons else "FAIL"
-            print(f"{label}  {abbreviations[team_id]} {tag} shots={counts['shots']:>3} "
-                  f"intervals={counts['intervals']:>3}")
-            for reason in reasons:
-                print(f"       !! {reason}")
+            for line in format_team_game(label, abbreviations[team_id], payload):
+                print(line)
 
     # ---------------- per-team season aggregate ----------------
     manifest_teams: dict[str, dict] = {}
