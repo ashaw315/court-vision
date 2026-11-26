@@ -1,6 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { getDefense, getMatchup, getTimeline, getTrend, getValue } from '@/lib/api/analysis';
+import { and, eq } from 'drizzle-orm';
+
+import { getDb } from '@/db/client';
+import { gameTeamValidation } from '@/db/schema';
 import { teamByAbbreviation } from '@/lib/teams';
 import { TimelineResponse, TrendResponse, ValueResponse } from '@/lib/contracts/analysis';
 
@@ -38,14 +42,30 @@ describe('analysis queries', () => {
     expect(shots).toBe(6089);
   });
 
-  it('reports no defensive data rather than zeros when opponents are not loaded', async () => {
+  /** `${gameId}:${teamId}` for every team-game side that passed validation this season. */
+  async function validatedSides(): Promise<Set<string>> {
+    const rows = await getDb()
+      .select({ gameId: gameTeamValidation.gameId, teamId: gameTeamValidation.teamId })
+      .from(gameTeamValidation)
+      .where(and(eq(gameTeamValidation.season, NETS.season), eq(gameTeamValidation.passed, true)));
+    return new Set(rows.map((r) => `${r.gameId}:${r.teamId}`));
+  }
+
+  it('reports defensive data exactly where the opponent side validated, never zeros', async () => {
+    // Holds for the Nets-only sample (no opponent loaded: every game null) and for a branch
+    // with real opponents loaded (a game has data iff that opponent's side passed).
+    const passed = await validatedSides();
     const timeline = await getTimeline(NETS);
-    // Only the Nets are loaded in the sample, so no opponent side has validated.
-    expect(timeline.games.every((g) => g.defense === null)).toBe(true);
+    for (const g of timeline.games) {
+      const opponentPassed = passed.has(`${g.gameId}:${g.opponentId}`);
+      expect(g.defense !== null, `game ${g.gameId}`).toBe(opponentPassed);
+      if (g.defense) expect(g.defense.shots).toBeGreaterThan(0);
+    }
+    const withData = timeline.games.filter((g) => g.defense !== null).length;
     const defense = await getDefense(NETS);
-    expect(defense.gamesWithDefense).toBe(0);
-    expect(defense.shots).toHaveLength(0);
+    expect(defense.gamesWithDefense).toBe(withData);
     expect(defense.games).toBe(72);
+    if (withData === 0) expect(defense.shots).toHaveLength(0);
   });
 
   it('matchup shows opponent shots only from games with defensive data', async () => {
@@ -72,6 +92,10 @@ describe('analysis queries', () => {
     const trend = await getTrend(NETS.teamId);
     expect(TrendResponse.safeParse(trend).success).toBe(true);
     expect(trend.seasons.map((s) => s.season)).toContain('2025-26');
-    expect(trend.seasons[0].defense).toBeNull();
+    // Unavailable, not zero: a season with no validated opponent side has null defence.
+    const timeline = await getTimeline(NETS);
+    const anyDefense = timeline.games.some((g) => g.defense !== null);
+    const season = trend.seasons.find((s) => s.season === NETS.season)!;
+    expect(season.defense === null).toBe(!anyDefense);
   });
 });
