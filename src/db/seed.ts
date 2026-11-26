@@ -239,7 +239,7 @@ async function main(): Promise<void> {
     gameId: f.gameId,
     passed: false,
     // The check name only; the full diagnostic stays in the manifest.
-    reasons: f.reasons.map((r) => r.replace(/^check failed: /, '').replace(/ \(.*$/s, '')).slice(0, 1),
+    reasons: f.reasons.map((r) => r.replace(/^check failed: /, '').replace(/ \([\s\S]*$/, '')).slice(0, 1),
   }));
 
   await insertBatched('team_seasons', [{ season: SEASON, teamId: TEAM_ID }], (batch) =>
