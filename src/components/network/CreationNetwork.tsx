@@ -647,8 +647,13 @@ export function CreationNetwork({
 
               `max-height` preserves the aspect ratio — `height: auto` still governs below the
               cap — so arcs and labels never squash; the plate simply stops growing.
+
+              The 320px floor: on a phone the reading guide stacks ABOVE the plate, so the
+              SVG's top sits below the first screen, the calc goes negative and the network
+              collapsed to 0px tall. Below the floor `height: auto` (about 226px at 390px
+              wide) governs again; on a laptop the fold cap is far above it and unchanged.
             */
-            maxHeight: 'min(calc(100dvh - var(--cv-svg-top, 340px) - 18px), 760px)',
+            maxHeight: 'max(min(calc(100dvh - var(--cv-svg-top, 340px) - 18px), 760px), 320px)',
             margin: '0 auto',
           }}
           role="img"
