@@ -86,7 +86,8 @@ export function Section({ title, note, children }: { title: string; note?: strin
 
 export function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
   return (
-    <div style={{ overflowX: 'auto' }}>
+    // Focusable so a keyboard user can scroll a table that is wider than a phone screen.
+    <div role="region" aria-label={`Table: ${head.join(', ')}`} tabIndex={0} style={{ overflowX: 'auto' }}>
       <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
         <thead>
           <tr>
