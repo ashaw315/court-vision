@@ -32,6 +32,9 @@ export default async function MatchupPage({
     getTeamSeasonLabels(team.teamId),
   ]);
 
+  // Opponent shots exist only for games whose opponent side validated.
+  const withDefense = matchup.games.filter((g) => g.defense).length;
+
   return (
     <Shell
       title={`${team.abbreviation} vs ${opponent.abbreviation}`}
@@ -67,9 +70,11 @@ export default async function MatchupPage({
               <ShotMap shots={matchup.teamShots} label={`${team.abbreviation} shots`} />
               <ShotMap
                 shots={matchup.opponentShots}
-                label={`${opponent.abbreviation} shots`}
+                label={withDefense < matchup.games.length
+                  ? `${opponent.abbreviation} shots · ${withDefense} of ${matchup.games.length} ${matchup.games.length === 1 ? 'game' : 'games'}`
+                  : `${opponent.abbreviation} shots`}
                 accent={color.structure}
-                unavailable={matchup.games.some((g) => g.defense) ? undefined : `no validated ${opponent.abbreviation} data for these games`}
+                unavailable={withDefense > 0 ? undefined : `no validated ${opponent.abbreviation} data for these games`}
               />
             </div>
           </Section>
