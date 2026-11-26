@@ -123,12 +123,12 @@ export default async function AnalysisPage({
 
       <Section
         title="Points created per assist"
-        note="Assisted baskets with a resolved assister, and what the shots they set up were worth. Assists whose passer could not be identified are not credited to anyone."
+        note="Assisted baskets with a resolved assister: how many, the points they produced, and the share that were threes. Assists whose passer could not be identified are not credited to anyone."
       >
         <Table
-          head={['Creator', 'Assists', 'Points', 'Points / assist', 'Expected / assist']}
+          head={['Creator', 'Assists', 'Points', '3PT share']}
           rows={value.creators.slice(0, 12).map((c) => [
-            c.displayName, c.assists, c.points, fmt(c.points / c.assists, 2), fmt(c.expectedPointsOnAssistedShots / c.assists, 2),
+            c.displayName, c.assists, c.points, pct(c.threes, c.assists),
           ])}
         />
       </Section>

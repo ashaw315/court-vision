@@ -128,8 +128,8 @@ export const CreatorValue = z.object({
   /** Assisted baskets with a resolved assister — unresolved ones are never attributed. */
   assists: z.number().int().nonnegative(),
   points: z.number().int().nonnegative(),
-  /** What the shots they set up would be worth at the typical make rate from those spots. */
-  expectedPointsOnAssistedShots: z.number(),
+  /** How many of those assisted baskets were threes. */
+  threes: z.number().int().nonnegative(),
 });
 
 export const ValueResponse = z.object({

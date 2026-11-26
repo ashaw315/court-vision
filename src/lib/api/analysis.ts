@@ -334,7 +334,7 @@ export async function getValue(scope: TeamScope): Promise<ValueResponse> {
   const own = data.shots.filter((s) => s.teamId === scope.teamId);
 
   const shooters = new Map<number, { attempts: number; actual: number; expected: number }>();
-  const creators = new Map<number, { assists: number; points: number; expected: number }>();
+  const creators = new Map<number, { assists: number; points: number; threes: number }>();
   for (const s of own) {
     const x = bundle.model.expectedPoints(s);
     const sh = shooters.get(s.shooterId) ?? { attempts: 0, actual: 0, expected: 0 };
@@ -345,10 +345,10 @@ export async function getValue(scope: TeamScope): Promise<ValueResponse> {
 
     // Only resolved assisters: an unresolved assist is never credited to anyone.
     if (s.made && s.assisted && s.assisterId !== null && s.assisterId !== s.shooterId) {
-      const c = creators.get(s.assisterId) ?? { assists: 0, points: 0, expected: 0 };
+      const c = creators.get(s.assisterId) ?? { assists: 0, points: 0, threes: 0 };
       c.assists += 1;
       c.points += s.shotValue;
-      c.expected += x;
+      if (s.shotValue === 3) c.threes += 1;
       creators.set(s.assisterId, c);
     }
   }
@@ -377,7 +377,7 @@ export async function getValue(scope: TeamScope): Promise<ValueResponse> {
     creators: [...creators.entries()]
       .map(([personId, v]) => ({
         personId, displayName: nameOf(personId), assists: v.assists,
-        points: v.points, expectedPointsOnAssistedShots: v.expected,
+        points: v.points, threes: v.threes,
       }))
       .sort((a, b) => b.assists - a.assists),
     model: bundle.info,

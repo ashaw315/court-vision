@@ -86,6 +86,11 @@ describe('analysis queries', () => {
     const credited = value.creators.reduce((n, c) => n + c.assists, 0);
     expect(credited).toBeGreaterThan(0);
     expect(credited).toBeLessThan(6089);
+    // Each credited basket is a two or a three, so points = 2 x assists + threes.
+    for (const c of value.creators) {
+      expect(c.threes).toBeLessThanOrEqual(c.assists);
+      expect(c.points).toBe(2 * c.assists + c.threes);
+    }
   });
 
   it('trend lists the loaded seasons for the team', async () => {
